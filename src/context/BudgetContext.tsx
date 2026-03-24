@@ -79,6 +79,15 @@ interface BudgetContextValue {
 
   /** Remove a transaction by id. Auto-saves silently. */
   deleteTransaction: (id: string) => Promise<void>;
+
+  /**
+   * Apply AI-suggested category budget changes.
+   * Each entry maps a category name to a new monthly limit.
+   * Auto-saves silently — same behaviour as transaction mutations.
+   */
+  applyAdjustments: (
+    adjustments: { categoryName: string; newAmount: number }[],
+  ) => Promise<void>;
 }
 
 // ─── Context + hook ───────────────────────────────────────────────────────────
@@ -186,8 +195,28 @@ export function BudgetProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // ── Apply AI-suggested category budget adjustments ────────────────────────────
+  const applyAdjustments = useCallback(
+    async (adjustments: { categoryName: string; newAmount: number }[]): Promise<void> => {
+      setBudget((prev) => {
+        const updated: BudgetData = {
+          ...prev,
+          categories: prev.categories.map((cat) => {
+            const adj = adjustments.find((a) => a.categoryName === cat.name);
+            return adj ? { ...cat, amount: adj.newAmount.toString() } : cat;
+          }),
+        };
+        writeRaw(updated).catch((err) =>
+          console.error('[BudgetContext] applyAdjustments auto-save failed:', err),
+        );
+        return updated;
+      });
+    },
+    [],
+  );
+
   return (
-    <BudgetContext.Provider value={{ budget, isLoading, saveBudget, addTransaction, editTransaction, deleteTransaction }}>
+    <BudgetContext.Provider value={{ budget, isLoading, saveBudget, addTransaction, editTransaction, deleteTransaction, applyAdjustments }}>
       {children}
     </BudgetContext.Provider>
   );

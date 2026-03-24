@@ -10,7 +10,7 @@
  *  3. Categories     — name + monthly spending limit
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   ScrollView,
   View,
@@ -26,7 +26,9 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { colors, typography, spacing, radius, shadows } from '../theme';
+import { typography, spacing, radius, shadows } from '../theme';
+import { Colors } from '../theme';
+import { useTheme } from '../context/ThemeContext';
 import Card from '../components/Card';
 import SectionHeader from '../components/SectionHeader';
 import StyledInput from '../components/StyledInput';
@@ -67,7 +69,90 @@ interface IncomeCardProps {
   canRemove: boolean;
 }
 
+const createIcStyles = (c: Colors) => StyleSheet.create({
+  card: {
+    backgroundColor: c.surfaceAlt,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: c.border,
+    padding: spacing[3],
+    marginBottom: spacing[3],
+  },
+  cardNoIncome: {
+    borderColor: c.warning,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing[2],
+  },
+  removeBtn: {
+    width: 36,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  removeBtnText: {
+    fontSize: typography.sm,
+    fontWeight: typography.bold,
+    color: c.textMuted,
+  },
+  typeRow: {
+    flexDirection: 'row',
+    gap: spacing[2],
+    marginBottom: spacing[3],
+  },
+  typePill: {
+    flex: 1,
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing[2],
+    borderRadius: radius.md,
+    backgroundColor: c.surface,
+    borderWidth: 1.5,
+    borderColor: c.border,
+    gap: 2,
+  },
+  typePillActive: {
+    backgroundColor: c.primaryLight,
+    borderColor: c.primary,
+  },
+  typePillWarningActive: {
+    backgroundColor: c.warningLight,
+    borderColor: c.warning,
+  },
+  typePillIcon: {
+    fontSize: 18,
+  },
+  typePillLabel: {
+    fontSize: typography.xs,
+    fontWeight: typography.semibold,
+    color: c.textMuted,
+  },
+  typePillLabelActive: {
+    color: c.primary,
+  },
+  typePillLabelWarning: {
+    color: c.warning,
+  },
+  noIncomeNote: {
+    backgroundColor: c.warningLight,
+    borderRadius: radius.sm,
+    padding: spacing[3],
+    marginBottom: spacing[3],
+  },
+  noIncomeNoteText: {
+    fontSize: typography.sm,
+    color: c.textSecondary,
+    lineHeight: typography.sm * typography.relaxed,
+  },
+});
+
 function IncomeCard({ source, onChange, onRemove, canRemove }: IncomeCardProps) {
+  const { colors } = useTheme();
+  const icStyles = useMemo(() => createIcStyles(colors), [colors]);
+
   const patch = (fields: Partial<IncomeSource>) => onChange({ ...source, ...fields });
   const isNoIncome = source.type === 'no_income';
 
@@ -170,34 +255,142 @@ interface DebtRowProps {
   onRemove: () => void;
 }
 
+const createDebtStyles = (c: Colors) => StyleSheet.create({
+  card: {
+    backgroundColor: c.surfaceAlt,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: c.border,
+    padding: spacing[3],
+    marginBottom: spacing[3],
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing[2],
+  },
+  removeBtn: {
+    width: 36,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  removeBtnText: {
+    fontSize: typography.sm,
+    fontWeight: typography.bold,
+    color: c.textMuted,
+  },
+  amountLabels: {
+    flexDirection: 'row',
+    gap: spacing[3],
+    marginBottom: spacing[1],
+  },
+  amountLabel: {
+    flex: 1,
+    fontSize: typography.sm,
+    fontWeight: typography.medium,
+    color: c.textSecondary,
+  },
+  amountLabelOptional: {
+    fontWeight: typography.regular,
+    color: c.textMuted,
+  },
+  amountRow: {
+    flexDirection: 'row',
+    gap: spacing[3],
+  },
+  payoffHint: {
+    marginTop: spacing[2],
+    backgroundColor: c.primaryLight,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
+  },
+  payoffHintText: {
+    fontSize: typography.xs,
+    color: c.primary,
+    lineHeight: typography.xs * 1.5,
+  },
+  payoffHintBold: {
+    fontWeight: typography.bold,
+  },
+});
+
 function DebtRow({ item, onChange, onRemove }: DebtRowProps) {
+  const { colors } = useTheme();
+  const debtStyles = useMemo(() => createDebtStyles(colors), [colors]);
+
+  const monthly = parseFloat(item.amount) || 0;
+  const total   = parseFloat(item.totalAmount ?? '') || 0;
+  const hasPayoff = monthly > 0 && total > 0;
+  const monthsLeft = hasPayoff ? Math.ceil(total / monthly) : null;
+
   return (
-    <View style={rowStyles.row}>
-      <View style={rowStyles.name}>
-        <StyledInput
-          placeholder="Debt name"
-          value={item.name}
-          onChangeText={(v) => onChange({ ...item, name: v })}
-          returnKeyType="next"
-        />
+    <View style={debtStyles.card}>
+
+      {/* ── Name + remove ── */}
+      <View style={debtStyles.nameRow}>
+        <View style={{ flex: 1 }}>
+          <StyledInput
+            placeholder="e.g. Student Loan, Credit Card…"
+            value={item.name}
+            onChangeText={(v) => onChange({ ...item, name: v })}
+            returnKeyType="next"
+          />
+        </View>
+        <TouchableOpacity
+          style={debtStyles.removeBtn}
+          onPress={onRemove}
+          accessibilityLabel="Remove debt"
+        >
+          <Text style={debtStyles.removeBtnText}>✕</Text>
+        </TouchableOpacity>
       </View>
-      <View style={rowStyles.amount}>
-        <StyledInput
-          placeholder="0"
-          value={item.amount}
-          prefix="$"
-          keyboardType="decimal-pad"
-          returnKeyType="done"
-          onChangeText={(v) => onChange({ ...item, amount: v })}
-        />
+
+      {/* ── Two amount inputs side-by-side ── */}
+      <View style={debtStyles.amountLabels}>
+        <Text style={debtStyles.amountLabel}>Monthly Payment</Text>
+        <Text style={debtStyles.amountLabel}>
+          Total Balance <Text style={debtStyles.amountLabelOptional}>(optional)</Text>
+        </Text>
       </View>
-      <TouchableOpacity
-        style={rowStyles.removeBtn}
-        onPress={onRemove}
-        accessibilityLabel="Remove debt"
-      >
-        <Text style={rowStyles.removeBtnText}>✕</Text>
-      </TouchableOpacity>
+      <View style={debtStyles.amountRow}>
+        <View style={{ flex: 1 }}>
+          <StyledInput
+            placeholder="0"
+            prefix="$"
+            keyboardType="decimal-pad"
+            returnKeyType="done"
+            value={item.amount}
+            onChangeText={(v) => onChange({ ...item, amount: v })}
+          />
+        </View>
+        <View style={{ flex: 1 }}>
+          <StyledInput
+            placeholder="0"
+            prefix="$"
+            keyboardType="decimal-pad"
+            returnKeyType="done"
+            value={item.totalAmount ?? ''}
+            onChangeText={(v) => onChange({ ...item, totalAmount: v || undefined })}
+          />
+        </View>
+      </View>
+
+      {/* ── Payoff preview — only when both fields are filled ── */}
+      {hasPayoff && monthsLeft !== null && (
+        <View style={debtStyles.payoffHint}>
+          <Text style={debtStyles.payoffHintText}>
+            📅 At ${monthly.toLocaleString()}/mo you'll pay this off in{' '}
+            <Text style={debtStyles.payoffHintBold}>
+              {monthsLeft < 12
+                ? `${monthsLeft} month${monthsLeft === 1 ? '' : 's'}`
+                : `${Math.floor(monthsLeft / 12)} yr${Math.floor(monthsLeft / 12) === 1 ? '' : 's'}${monthsLeft % 12 > 0 ? ` ${monthsLeft % 12} mo` : ''}`}
+            </Text>
+          </Text>
+        </View>
+      )}
+
     </View>
   );
 }
@@ -212,11 +405,90 @@ interface CategoryPickerModalProps {
   onClose: () => void;
 }
 
+const createPickerStyles = (c: Colors) => StyleSheet.create({
+  sheet: {
+    flex: 1,
+    backgroundColor: c.background,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing[5],
+    paddingVertical: spacing[4],
+    borderBottomWidth: 1,
+    borderBottomColor: c.border,
+    backgroundColor: c.surface,
+  },
+  headerTitle: {
+    fontSize: typography.md,
+    fontWeight: typography.bold,
+    color: c.textPrimary,
+  },
+  headerClose: {
+    fontSize: typography.base,
+    fontWeight: typography.semibold,
+    color: c.primary,
+  },
+  grid: {
+    padding: spacing[4],
+    gap: spacing[3],
+  },
+  gridRow: {
+    gap: spacing[3],
+  },
+  cell: {
+    flex: 1,
+    backgroundColor: c.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1.5,
+    borderColor: c.border,
+    padding: spacing[4],
+    alignItems: 'center',
+    gap: spacing[1],
+    ...shadows.sm,
+  },
+  cellUsed: {
+    backgroundColor: c.surfaceAlt,
+    borderColor: c.border,
+    opacity: 0.5,
+  },
+  cellDot: {
+    position: 'absolute',
+    top: spacing[3],
+    right: spacing[3],
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  cellIcon: {
+    fontSize: 32,
+    marginBottom: spacing[1],
+  },
+  cellName: {
+    fontSize: typography.sm,
+    fontWeight: typography.semibold,
+    color: c.textPrimary,
+    textAlign: 'center',
+  },
+  cellNameUsed: {
+    color: c.textMuted,
+  },
+  cellUsedBadge: {
+    fontSize: typography.xs,
+    color: c.textMuted,
+    marginTop: 2,
+  },
+});
+
 /**
  * Full-screen modal showing a 2-column grid of preset categories.
  * Already-used categories are grayed out to prevent duplicates.
  */
 function CategoryPickerModal({ visible, usedNames, onSelect, onClose }: CategoryPickerModalProps) {
+  const { colors } = useTheme();
+  const pickerStyles = useMemo(() => createPickerStyles(colors), [colors]);
+
   return (
     <Modal
       visible={visible}
@@ -276,7 +548,85 @@ interface CategoryRowProps {
   onRemove: () => void;
 }
 
+const createRowStyles = (c: Colors) => StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing[2],
+    marginBottom: spacing[1],
+  },
+  // ── Category selector button (replaces free-text input) ──
+  categoryBtn: {
+    flex: 1.4,
+    height: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: c.surfaceAlt,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: c.border,
+    paddingHorizontal: spacing[3],
+    marginBottom: spacing[3],
+  },
+  categoryBtnEmpty: {
+    borderStyle: 'dashed',
+  },
+  categoryBtnInner: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+  },
+  categoryDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  categoryIcon: {
+    fontSize: 16,
+  },
+  categoryName: {
+    flex: 1,
+    fontSize: typography.sm,
+    fontWeight: typography.medium,
+    color: c.textPrimary,
+  },
+  categoryPlaceholder: {
+    flex: 1,
+    fontSize: typography.sm,
+    color: c.textMuted,
+  },
+  categoryChevron: {
+    fontSize: 20,
+    color: c.textMuted,
+    lineHeight: 22,
+  },
+  // ── Debt row name input (free-text, unlike category selector) ──
+  name: {
+    flex: 1.4,
+  },
+  // ── Amount + remove (shared with DebtRow) ──
+  amount: {
+    flex: 1,
+  },
+  removeBtn: {
+    width: 36,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  removeBtnText: {
+    fontSize: typography.sm,
+    fontWeight: typography.bold,
+    color: c.textMuted,
+  },
+});
+
 function CategoryRow({ item, usedNames, onChange, onRemove }: CategoryRowProps) {
+  const { colors } = useTheme();
+  const rowStyles = useMemo(() => createRowStyles(colors), [colors]);
+
   const [pickerOpen, setPickerOpen] = useState(false);
 
   const handleSelect = (preset: PresetCategory) => {
@@ -340,7 +690,29 @@ function CategoryRow({ item, usedNames, onChange, onRemove }: CategoryRowProps) 
 
 // ─── AddButton ─────────────────────────────────────────────────────────────────
 
+const createAddButtonStyles = (c: Colors) => StyleSheet.create({
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing[3],
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: c.primary,
+    marginTop: spacing[1],
+  },
+  addButtonText: {
+    fontSize: typography.sm,
+    fontWeight: typography.semibold,
+    color: c.primary,
+  },
+});
+
 function AddButton({ label, onPress }: { label: string; onPress: () => void }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createAddButtonStyles(colors), [colors]);
+
   return (
     <TouchableOpacity style={styles.addButton} onPress={onPress} activeOpacity={0.75}>
       <Text style={styles.addButtonText}>+ {label}</Text>
@@ -353,9 +725,78 @@ function AddButton({ label, onPress }: { label: string; onPress: () => void }) {
 /** Possible states for the Save button */
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
+const createStyles = (c: Colors) => StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: c.background,
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing[3],
+  },
+  loadingText: {
+    fontSize: typography.base,
+    color: c.textSecondary,
+  },
+  scroll: {
+    flex: 1,
+  },
+  content: {
+    paddingHorizontal: spacing[4],
+    paddingTop: spacing[6],
+  },
+  pageHeader: {
+    marginBottom: spacing[5],
+  },
+  pageTitle: {
+    fontSize: typography['2xl'],
+    fontWeight: typography.bold,
+    color: c.textPrimary,
+  },
+  pageSubtitle: {
+    fontSize: typography.sm,
+    color: c.textSecondary,
+    marginTop: spacing[1],
+    lineHeight: typography.sm * typography.relaxed,
+  },
+  section: {
+    marginBottom: spacing[4],
+  },
+  saveButton: {
+    backgroundColor: c.primary,
+    borderRadius: radius.lg,
+    paddingVertical: spacing[4],
+    alignItems: 'center',
+    marginTop: spacing[2],
+    ...shadows.md,
+  },
+  saveButtonSuccess: {
+    backgroundColor: c.accent,
+  },
+  saveButtonError: {
+    backgroundColor: c.danger,
+  },
+  saveButtonText: {
+    fontSize: typography.base,
+    fontWeight: typography.bold,
+    color: c.textInverse,
+    letterSpacing: 0.3,
+  },
+  lastSaved: {
+    fontSize: typography.xs,
+    color: c.textMuted,
+    textAlign: 'center',
+    marginTop: spacing[2],
+  },
+});
+
 export default function SetupScreen() {
   // ── Pull data + actions from context ────────────────────────────────────────
   const { budget, isLoading, saveBudget } = useBudget();
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
 
   // ── Local form state (mirrors context, edited in-place before saving) ───────
   const [incomeSources, setIncomeSources] = useState<IncomeSource[]>(budget.incomeSources);
@@ -459,7 +900,7 @@ export default function SetupScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
       {/*
         KeyboardAvoidingView sits between SafeAreaView and the ScrollView.
         On iOS 'padding' adds bottom padding equal to the keyboard height so
@@ -573,321 +1014,3 @@ export default function SetupScreen() {
     </SafeAreaView>
   );
 }
-
-// ─── Styles ────────────────────────────────────────────────────────────────────
-
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  loadingContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing[3],
-  },
-  loadingText: {
-    fontSize: typography.base,
-    color: colors.textSecondary,
-  },
-  scroll: {
-    flex: 1,
-  },
-  content: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[6],
-  },
-  pageHeader: {
-    marginBottom: spacing[5],
-  },
-  pageTitle: {
-    fontSize: typography['2xl'],
-    fontWeight: typography.bold,
-    color: colors.textPrimary,
-  },
-  pageSubtitle: {
-    fontSize: typography.sm,
-    color: colors.textSecondary,
-    marginTop: spacing[1],
-    lineHeight: typography.sm * typography.relaxed,
-  },
-  section: {
-    marginBottom: spacing[4],
-  },
-  addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing[3],
-    borderRadius: radius.md,
-    borderWidth: 1.5,
-    borderStyle: 'dashed',
-    borderColor: colors.primary,
-    marginTop: spacing[1],
-  },
-  addButtonText: {
-    fontSize: typography.sm,
-    fontWeight: typography.semibold,
-    color: colors.primary,
-  },
-  saveButton: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.lg,
-    paddingVertical: spacing[4],
-    alignItems: 'center',
-    marginTop: spacing[2],
-    ...shadows.md,
-  },
-  saveButtonSuccess: {
-    backgroundColor: colors.accent,
-  },
-  saveButtonError: {
-    backgroundColor: colors.danger,
-  },
-  saveButtonText: {
-    fontSize: typography.base,
-    fontWeight: typography.bold,
-    color: colors.textInverse,
-    letterSpacing: 0.3,
-  },
-  lastSaved: {
-    fontSize: typography.xs,
-    color: colors.textMuted,
-    textAlign: 'center',
-    marginTop: spacing[2],
-  },
-});
-
-const icStyles = StyleSheet.create({
-  card: {
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: radius.md,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    padding: spacing[3],
-    marginBottom: spacing[3],
-  },
-  cardNoIncome: {
-    borderColor: colors.warning,
-  },
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing[2],
-  },
-  removeBtn: {
-    width: 36,
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  removeBtnText: {
-    fontSize: typography.sm,
-    fontWeight: typography.bold,
-    color: colors.textMuted,
-  },
-  typeRow: {
-    flexDirection: 'row',
-    gap: spacing[2],
-    marginBottom: spacing[3],
-  },
-  typePill: {
-    flex: 1,
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing[2],
-    borderRadius: radius.md,
-    backgroundColor: colors.surface,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    gap: 2,
-  },
-  typePillActive: {
-    backgroundColor: colors.primaryLight,
-    borderColor: colors.primary,
-  },
-  typePillWarningActive: {
-    backgroundColor: colors.warningLight,
-    borderColor: colors.warning,
-  },
-  typePillIcon: {
-    fontSize: 18,
-  },
-  typePillLabel: {
-    fontSize: typography.xs,
-    fontWeight: typography.semibold,
-    color: colors.textMuted,
-  },
-  typePillLabelActive: {
-    color: colors.primary,
-  },
-  typePillLabelWarning: {
-    color: colors.warning,
-  },
-  noIncomeNote: {
-    backgroundColor: colors.warningLight,
-    borderRadius: radius.sm,
-    padding: spacing[3],
-    marginBottom: spacing[3],
-  },
-  noIncomeNoteText: {
-    fontSize: typography.sm,
-    color: colors.textSecondary,
-    lineHeight: typography.sm * typography.relaxed,
-  },
-});
-
-const rowStyles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing[2],
-    marginBottom: spacing[1],
-  },
-  // ── Category selector button (replaces free-text input) ──
-  categoryBtn: {
-    flex: 1.4,
-    height: 48,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: radius.md,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    paddingHorizontal: spacing[3],
-    marginBottom: spacing[3],
-  },
-  categoryBtnEmpty: {
-    borderStyle: 'dashed',
-  },
-  categoryBtnInner: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-  },
-  categoryDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  categoryIcon: {
-    fontSize: 16,
-  },
-  categoryName: {
-    flex: 1,
-    fontSize: typography.sm,
-    fontWeight: typography.medium,
-    color: colors.textPrimary,
-  },
-  categoryPlaceholder: {
-    flex: 1,
-    fontSize: typography.sm,
-    color: colors.textMuted,
-  },
-  categoryChevron: {
-    fontSize: 20,
-    color: colors.textMuted,
-    lineHeight: 22,
-  },
-  // ── Debt row name input (free-text, unlike category selector) ──
-  name: {
-    flex: 1.4,
-  },
-  // ── Amount + remove (shared with DebtRow) ──
-  amount: {
-    flex: 1,
-  },
-  removeBtn: {
-    width: 36,
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  removeBtnText: {
-    fontSize: typography.sm,
-    fontWeight: typography.bold,
-    color: colors.textMuted,
-  },
-});
-
-// ─── Category picker modal styles ──────────────────────────────────────────────
-
-const pickerStyles = StyleSheet.create({
-  sheet: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing[5],
-    paddingVertical: spacing[4],
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  headerTitle: {
-    fontSize: typography.md,
-    fontWeight: typography.bold,
-    color: colors.textPrimary,
-  },
-  headerClose: {
-    fontSize: typography.base,
-    fontWeight: typography.semibold,
-    color: colors.primary,
-  },
-  grid: {
-    padding: spacing[4],
-    gap: spacing[3],
-  },
-  gridRow: {
-    gap: spacing[3],
-  },
-  cell: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    padding: spacing[4],
-    alignItems: 'center',
-    gap: spacing[1],
-    ...shadows.sm,
-  },
-  cellUsed: {
-    backgroundColor: colors.surfaceAlt,
-    borderColor: colors.border,
-    opacity: 0.5,
-  },
-  cellDot: {
-    position: 'absolute',
-    top: spacing[3],
-    right: spacing[3],
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  cellIcon: {
-    fontSize: 32,
-    marginBottom: spacing[1],
-  },
-  cellName: {
-    fontSize: typography.sm,
-    fontWeight: typography.semibold,
-    color: colors.textPrimary,
-    textAlign: 'center',
-  },
-  cellNameUsed: {
-    color: colors.textMuted,
-  },
-  cellUsedBadge: {
-    fontSize: typography.xs,
-    color: colors.textMuted,
-    marginTop: 2,
-  },
-});

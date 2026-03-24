@@ -3,9 +3,10 @@
  * Renders a title with an optional subtitle and a colored left accent bar.
  */
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { colors, typography, spacing, radius } from '../theme';
+import { Colors, typography, spacing, radius } from '../theme';
+import { useTheme } from '../context/ThemeContext';
 
 interface SectionHeaderProps {
   title: string;
@@ -13,23 +14,7 @@ interface SectionHeaderProps {
   accentColor?: string;
 }
 
-export default function SectionHeader({
-  title,
-  subtitle,
-  accentColor = colors.primary,
-}: SectionHeaderProps) {
-  return (
-    <View style={styles.container}>
-      <View style={[styles.accent, { backgroundColor: accentColor }]} />
-      <View>
-        <Text style={styles.title}>{title}</Text>
-        {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
-      </View>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
+const createStyles = (c: Colors) => StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -44,11 +29,31 @@ const styles = StyleSheet.create({
   title: {
     fontSize: typography.md,
     fontWeight: typography.bold,
-    color: colors.textPrimary,
+    color: c.textPrimary,
   },
   subtitle: {
     fontSize: typography.sm,
-    color: colors.textSecondary,
+    color: c.textSecondary,
     marginTop: 2,
   },
 });
+
+export default function SectionHeader({
+  title,
+  subtitle,
+  accentColor,
+}: SectionHeaderProps) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const accent = accentColor ?? colors.primary;
+
+  return (
+    <View style={styles.container}>
+      <View style={[styles.accent, { backgroundColor: accent }]} />
+      <View>
+        <Text style={styles.title}>{title}</Text>
+        {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+      </View>
+    </View>
+  );
+}

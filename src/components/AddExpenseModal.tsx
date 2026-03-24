@@ -26,7 +26,9 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { colors, typography, spacing, radius } from '../theme';
+import { typography, spacing, radius } from '../theme';
+import { Colors } from '../theme';
+import { useTheme } from '../context/ThemeContext';
 import { useBudget } from '../context/BudgetContext';
 import { CategoryItem, Transaction } from '../types/budget';
 
@@ -54,7 +56,44 @@ interface CategoryRowProps {
   onPress: () => void;
 }
 
+const createCatRowStyles = (c: Colors) => StyleSheet.create({
+  catRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[3],
+    gap: spacing[2],
+  },
+  catRowSelected: {
+    backgroundColor: c.primaryLight,
+  },
+  catDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  catIcon: {
+    fontSize: 20,
+  },
+  catName: {
+    flex: 1,
+    fontSize: typography.base,
+    color: c.textPrimary,
+    fontWeight: typography.medium,
+  },
+  catNameSelected: {
+    fontWeight: typography.semibold,
+  },
+  catCheck: {
+    fontSize: typography.base,
+    fontWeight: typography.bold,
+  },
+});
+
 function CategoryRow({ item, selected, onPress }: CategoryRowProps) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createCatRowStyles(colors), [colors]);
+
   return (
     <TouchableOpacity
       style={[styles.catRow, selected && styles.catRowSelected]}
@@ -82,12 +121,116 @@ export interface AddExpenseModalProps {
   editingTransaction?: Transaction | null;
 }
 
+const createStyles = (c: Colors) => StyleSheet.create({
+  sheet: {
+    flex: 1,
+    backgroundColor: c.background,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing[5],
+    paddingVertical: spacing[4],
+    backgroundColor: c.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: c.border,
+  },
+  headerCancel: {
+    fontSize: typography.base,
+    color: c.textSecondary,
+    fontWeight: typography.medium,
+    minWidth: 60,
+  },
+  headerTitle: {
+    fontSize: typography.md,
+    fontWeight: typography.bold,
+    color: c.textPrimary,
+  },
+  headerAction: {
+    fontSize: typography.base,
+    color: c.primary,
+    fontWeight: typography.bold,
+    minWidth: 60,
+    textAlign: 'right',
+  },
+  headerActionDisabled: {
+    color: c.textMuted,
+  },
+  errorBanner: {
+    backgroundColor: c.dangerLight,
+    paddingHorizontal: spacing[5],
+    paddingVertical: spacing[3],
+    borderBottomWidth: 1,
+    borderBottomColor: c.danger,
+  },
+  errorText: {
+    fontSize: typography.sm,
+    color: c.danger,
+    fontWeight: typography.medium,
+  },
+  section: {
+    backgroundColor: c.surface,
+    marginTop: spacing[4],
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: c.border,
+  },
+  sectionLabel: {
+    fontSize: typography.xs,
+    fontWeight: typography.semibold,
+    color: c.textMuted,
+    letterSpacing: 0.8,
+    paddingHorizontal: spacing[4],
+    paddingTop: spacing[3],
+    paddingBottom: spacing[2],
+  },
+  optional: {
+    fontWeight: typography.regular,
+    textTransform: 'none',
+    letterSpacing: 0,
+  },
+  separator: {
+    height: 1,
+    backgroundColor: c.border,
+    marginLeft: spacing[4] + 8 + 20 + spacing[2],
+  },
+  amountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing[4],
+    paddingBottom: spacing[3],
+    gap: spacing[2],
+  },
+  amountPrefix: {
+    fontSize: typography.xl,
+    fontWeight: typography.semibold,
+    color: c.textSecondary,
+  },
+  amountInput: {
+    flex: 1,
+    fontSize: typography.xl,
+    fontWeight: typography.semibold,
+    color: c.textPrimary,
+    paddingVertical: spacing[2],
+  },
+  noteInput: {
+    fontSize: typography.base,
+    color: c.textPrimary,
+    paddingHorizontal: spacing[4],
+    paddingBottom: spacing[4],
+    minHeight: 44,
+  },
+});
+
 export default function AddExpenseModal({
   visible,
   onClose,
   editingTransaction,
 }: AddExpenseModalProps) {
   const { budget, addTransaction, editTransaction } = useBudget();
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
 
   const isEditing = !!editingTransaction;
 
@@ -284,138 +427,3 @@ export default function AddExpenseModal({
     </Modal>
   );
 }
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
-const styles = StyleSheet.create({
-  sheet: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing[5],
-    paddingVertical: spacing[4],
-    backgroundColor: colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  headerCancel: {
-    fontSize: typography.base,
-    color: colors.textSecondary,
-    fontWeight: typography.medium,
-    minWidth: 60,
-  },
-  headerTitle: {
-    fontSize: typography.md,
-    fontWeight: typography.bold,
-    color: colors.textPrimary,
-  },
-  headerAction: {
-    fontSize: typography.base,
-    color: colors.primary,
-    fontWeight: typography.bold,
-    minWidth: 60,
-    textAlign: 'right',
-  },
-  headerActionDisabled: {
-    color: colors.textMuted,
-  },
-  errorBanner: {
-    backgroundColor: colors.dangerLight,
-    paddingHorizontal: spacing[5],
-    paddingVertical: spacing[3],
-    borderBottomWidth: 1,
-    borderBottomColor: colors.danger,
-  },
-  errorText: {
-    fontSize: typography.sm,
-    color: colors.danger,
-    fontWeight: typography.medium,
-  },
-  section: {
-    backgroundColor: colors.surface,
-    marginTop: spacing[4],
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: colors.border,
-  },
-  sectionLabel: {
-    fontSize: typography.xs,
-    fontWeight: typography.semibold,
-    color: colors.textMuted,
-    letterSpacing: 0.8,
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[3],
-    paddingBottom: spacing[2],
-  },
-  optional: {
-    fontWeight: typography.regular,
-    textTransform: 'none',
-    letterSpacing: 0,
-  },
-  separator: {
-    height: 1,
-    backgroundColor: colors.border,
-    marginLeft: spacing[4] + 8 + 20 + spacing[2],
-  },
-  catRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[3],
-    gap: spacing[2],
-  },
-  catRowSelected: {
-    backgroundColor: colors.primaryLight,
-  },
-  catDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  catIcon: {
-    fontSize: 20,
-  },
-  catName: {
-    flex: 1,
-    fontSize: typography.base,
-    color: colors.textPrimary,
-    fontWeight: typography.medium,
-  },
-  catNameSelected: {
-    fontWeight: typography.semibold,
-  },
-  catCheck: {
-    fontSize: typography.base,
-    fontWeight: typography.bold,
-  },
-  amountRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing[4],
-    paddingBottom: spacing[3],
-    gap: spacing[2],
-  },
-  amountPrefix: {
-    fontSize: typography.xl,
-    fontWeight: typography.semibold,
-    color: colors.textSecondary,
-  },
-  amountInput: {
-    flex: 1,
-    fontSize: typography.xl,
-    fontWeight: typography.semibold,
-    color: colors.textPrimary,
-    paddingVertical: spacing[2],
-  },
-  noteInput: {
-    fontSize: typography.base,
-    color: colors.textPrimary,
-    paddingHorizontal: spacing[4],
-    paddingBottom: spacing[4],
-    minHeight: 44,
-  },
-});

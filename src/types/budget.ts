@@ -26,6 +26,12 @@ export interface DebtItem {
   name: string;
   /** Monthly minimum payment */
   amount: string;
+  /**
+   * Optional total outstanding balance.
+   * When provided alongside a monthly payment, the dashboard will
+   * calculate and display an estimated payoff timeline.
+   */
+  totalAmount?: string;
 }
 
 // ─── Categories ───────────────────────────────────────────────────────────────

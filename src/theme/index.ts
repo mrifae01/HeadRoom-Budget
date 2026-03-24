@@ -1,42 +1,87 @@
 /**
  * Theme — central design tokens for Headroom.
- * Import { colors, typography, spacing, radius } from '@/theme' throughout the app.
+ *
+ * Two palettes are exported: `lightColors` and `darkColors`.
+ * The `colors` export remains as the light palette for any legacy static
+ * imports, but all components should consume colors via `useTheme()` so
+ * dark mode applies instantly on toggle.
  */
 
-export const colors = {
+export const lightColors = {
   // Primary palette — blues
-  primary: '#2563EB',       // vivid blue — main CTAs
-  primaryLight: '#DBEAFE',  // pale blue — backgrounds / highlights
-  primaryDark: '#1D4ED8',   // deep blue — pressed states
+  primary: '#2563EB',
+  primaryLight: '#DBEAFE',
+  primaryDark: '#1D4ED8',
 
   // Accent palette — greens
-  accent: '#10B981',        // emerald green — positive metrics
-  accentLight: '#D1FAE5',   // pale green — backgrounds
-  accentDark: '#059669',    // deep green — pressed states
+  accent: '#10B981',
+  accentLight: '#D1FAE5',
+  accentDark: '#059669',
 
   // Semantic
-  danger: '#EF4444',        // red — debt / over-budget
+  danger: '#EF4444',
   dangerLight: '#FEE2E2',
-  warning: '#F59E0B',       // amber — approaching limit
+  warning: '#F59E0B',
   warningLight: '#FEF3C7',
 
   // Neutrals
-  background: '#F8FAFC',    // page background
-  surface: '#FFFFFF',       // card surface
-  surfaceAlt: '#F1F5F9',    // secondary surface (e.g. input fill)
-  border: '#E2E8F0',        // dividers and borders
-  borderFocus: '#93C5FD',   // focused input border
+  background: '#F8FAFC',
+  surface: '#FFFFFF',
+  surfaceAlt: '#F1F5F9',
+  border: '#E2E8F0',
+  borderFocus: '#93C5FD',
 
   // Text
-  textPrimary: '#0F172A',   // headings
-  textSecondary: '#475569', // body / labels
-  textMuted: '#94A3B8',     // placeholders / captions
-  textInverse: '#FFFFFF',   // text on dark backgrounds
+  textPrimary: '#0F172A',
+  textSecondary: '#475569',
+  textMuted: '#94A3B8',
+  textInverse: '#FFFFFF',
 
   // Chat bubbles
   bubbleUser: '#2563EB',
   bubbleAI: '#FFFFFF',
 };
+
+export const darkColors = {
+  // Primary palette — slightly brighter for dark backgrounds
+  primary: '#3B82F6',
+  primaryLight: '#1E3A5F',
+  primaryDark: '#2563EB',
+
+  // Accent palette
+  accent: '#10B981',
+  accentLight: '#064E3B',
+  accentDark: '#059669',
+
+  // Semantic — lighter reds/ambers read better on dark
+  danger: '#F87171',
+  dangerLight: '#450A0A',
+  warning: '#FBBF24',
+  warningLight: '#451A03',
+
+  // Neutrals — inverted hierarchy
+  background: '#0F172A',   // deep navy — page bg
+  surface: '#1E293B',      // dark slate — cards
+  surfaceAlt: '#0F172A',   // same as bg — inputs recede into cards
+  border: '#334155',
+  borderFocus: '#3B82F6',
+
+  // Text
+  textPrimary: '#F1F5F9',
+  textSecondary: '#94A3B8',
+  textMuted: '#64748B',
+  textInverse: '#FFFFFF',
+
+  // Chat bubbles
+  bubbleUser: '#2563EB',
+  bubbleAI: '#1E293B',
+};
+
+/** Convenience alias — light palette (backward compat for any static imports) */
+export const colors = lightColors;
+
+/** The shape of a color palette — used as the generic parameter in ThemeContext */
+export type Colors = typeof lightColors;
 
 export const typography = {
   // Font sizes

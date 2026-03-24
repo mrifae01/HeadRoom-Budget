@@ -1,28 +1,31 @@
 /**
  * TabNavigator — root bottom-tab navigation for Headroom.
- * Three tabs: Setup, Dashboard, AI Advisor.
+ * Four tabs: Setup, Dashboard, AI Advisor, Settings.
  */
 
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View, Text, StyleSheet } from 'react-native';
-import { colors, typography, spacing } from '../theme';
+import { Text } from 'react-native';
+import { typography, spacing } from '../theme';
+import { useTheme } from '../context/ThemeContext';
 
 // Screens
-import SetupScreen from '../screens/SetupScreen';
+import SetupScreen     from '../screens/SetupScreen';
 import DashboardScreen from '../screens/DashboardScreen';
 import AIAdvisorScreen from '../screens/AIAdvisorScreen';
+import SettingsScreen  from '../screens/SettingsScreen';
 
-// Simple SVG-free icon component — replace with react-native-vector-icons later
+const ICONS: Record<string, string> = {
+  Setup:       '⚙',
+  Dashboard:   '◉',
+  'AI Advisor':'✦',
+  Settings:    '☰',
+};
+
 function TabIcon({ label, focused }: { label: string; focused: boolean }) {
-  const icons: Record<string, string> = {
-    Setup: '⚙',
-    Dashboard: '◉',
-    'AI Advisor': '✦',
-  };
   return (
-    <Text style={{ fontSize: 20, opacity: focused ? 1 : 0.45 }}>
-      {icons[label] ?? '●'}
+    <Text style={{ fontSize: 20, opacity: focused ? 1 : 0.4 }}>
+      {ICONS[label] ?? '●'}
     </Text>
   );
 }
@@ -30,38 +33,36 @@ function TabIcon({ label, focused }: { label: string; focused: boolean }) {
 const Tab = createBottomTabNavigator();
 
 export default function TabNavigator() {
+  const { colors, isDark } = useTheme();
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarStyle: styles.tabBar,
+        tabBarStyle: {
+          backgroundColor: colors.surface,
+          borderTopColor: colors.border,
+          borderTopWidth: 1,
+          height: 72,
+          paddingBottom: spacing[4],
+          paddingTop: spacing[2],
+        },
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,
-        tabBarLabelStyle: styles.tabLabel,
+        tabBarLabelStyle: {
+          fontSize: typography.xs,
+          fontWeight: typography.medium,
+          marginTop: 2,
+        },
         tabBarIcon: ({ focused }) => (
           <TabIcon label={route.name} focused={focused} />
         ),
       })}
     >
-      <Tab.Screen name="Setup" component={SetupScreen} />
-      <Tab.Screen name="Dashboard" component={DashboardScreen} />
+      <Tab.Screen name="Setup"      component={SetupScreen}     />
+      <Tab.Screen name="Dashboard"  component={DashboardScreen} />
       <Tab.Screen name="AI Advisor" component={AIAdvisorScreen} />
+      <Tab.Screen name="Settings"   component={SettingsScreen}  />
     </Tab.Navigator>
   );
 }
-
-const styles = StyleSheet.create({
-  tabBar: {
-    backgroundColor: colors.surface,
-    borderTopColor: colors.border,
-    borderTopWidth: 1,
-    height: 64,
-    paddingBottom: spacing[2],
-    paddingTop: spacing[1],
-  },
-  tabLabel: {
-    fontSize: typography.xs,
-    fontWeight: typography.medium,
-    marginTop: 2,
-  },
-});

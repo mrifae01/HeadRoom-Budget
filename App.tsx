@@ -8,15 +8,19 @@
 
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
+import { ThemeProvider } from './src/context/ThemeContext';
 import { BudgetProvider } from './src/context/BudgetContext';
 import TabNavigator from './src/navigation/TabNavigator';
 
 export default function App() {
   return (
-    <BudgetProvider>
-      <NavigationContainer>
-        <TabNavigator />
-      </NavigationContainer>
-    </BudgetProvider>
+    // ThemeProvider is outermost so every screen and navigator can call useTheme()
+    <ThemeProvider>
+      <BudgetProvider>
+        <NavigationContainer>
+          <TabNavigator />
+        </NavigationContainer>
+      </BudgetProvider>
+    </ThemeProvider>
   );
 }
