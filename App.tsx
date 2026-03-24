@@ -1,20 +1,22 @@
-import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+/**
+ * App.tsx — root of the Headroom app.
+ * Sets up the BudgetProvider (data layer) and React Navigation.
+ *
+ * Provider order matters: BudgetProvider wraps NavigationContainer so
+ * every screen — including modals and nested navigators — can call useBudget().
+ */
+
+import React from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { BudgetProvider } from './src/context/BudgetContext';
+import TabNavigator from './src/navigation/TabNavigator';
 
 export default function App() {
   return (
-    <View style={styles.container}>
-      <Text>Open up App.tsx to start working on your app!</Text>
-      <StatusBar style="auto" />
-    </View>
+    <BudgetProvider>
+      <NavigationContainer>
+        <TabNavigator />
+      </NavigationContainer>
+    </BudgetProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
