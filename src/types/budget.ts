@@ -27,11 +27,16 @@ export interface DebtItem {
   /** Monthly minimum payment */
   amount: string;
   /**
-   * Optional total outstanding balance.
-   * When provided alongside a monthly payment, the dashboard will
-   * calculate and display an estimated payoff timeline.
+   * Optional original total balance when the debt was added.
+   * Used alongside currentBalance to show payoff progress.
    */
   totalAmount?: string;
+  /**
+   * Optional current outstanding balance.
+   * When provided alongside totalAmount, the dashboard shows a progress bar.
+   * Used instead of totalAmount for payoff timeline calculations.
+   */
+  currentBalance?: string;
 }
 
 // ─── Categories ───────────────────────────────────────────────────────────────
@@ -62,6 +67,47 @@ export interface Transaction {
   note?: string;
 }
 
+// ─── Monthly archive record ───────────────────────────────────────────────────
+
+/**
+ * A fully self-contained snapshot of one calendar month.
+ * Created automatically on the first app-open after a month rolls over.
+ * Stored per-month so reports always show historically accurate figures.
+ */
+export interface MonthlyRecord {
+  /** Calendar month, e.g. "2026-03" */
+  month: string;
+
+  // Budget snapshot that was active this month
+  income: number;
+  debtTotal: number;
+  categories: {
+    name: string;
+    icon: string;
+    color: string;
+    /** Monthly budget limit for this category */
+    budgetLimit: number;
+  }[];
+
+  /** Every transaction that occurred during this month */
+  transactions: Transaction[];
+
+  /** Pre-computed summary — fast to render without re-scanning transactions */
+  summary: {
+    totalSpent: number;
+    totalBudgeted: number;
+    /** (income - totalSpent) / income, clamped to [0, 1] */
+    savingsRate: number;
+    categoryBreakdown: {
+      name: string;
+      icon: string;
+      color: string;
+      spent: number;
+      limit: number;
+    }[];
+  };
+}
+
 // ─── Top-level budget document ────────────────────────────────────────────────
 
 /**
@@ -75,4 +121,11 @@ export interface BudgetData {
   transactions: Transaction[];
   /** ISO timestamp of the last *setup* save — shown on the Setup screen */
   lastSaved: string | null;
+  /**
+   * The calendar month (YYYY-MM) the user last confirmed moving into.
+   * e.g. "2026-04" means the user confirmed starting April.
+   * When this differs from the current month, a month-end prompt is shown.
+   * Null on first launch — initialised silently without showing the prompt.
+   */
+  lastArchivedMonth: string | null;
 }

@@ -10,7 +10,7 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { ThemeProvider } from './src/context/ThemeContext';
 import { BudgetProvider } from './src/context/BudgetContext';
-import TabNavigator from './src/navigation/TabNavigator';
+import RootNavigator from './src/navigation/RootNavigator';
 
 export default function App() {
   return (
@@ -18,7 +18,7 @@ export default function App() {
     <ThemeProvider>
       <BudgetProvider>
         <NavigationContainer>
-          <TabNavigator />
+          <RootNavigator />
         </NavigationContainer>
       </BudgetProvider>
     </ThemeProvider>

@@ -11,6 +11,7 @@
  */
 
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   ScrollView,
   View,
@@ -53,6 +54,45 @@ function formatLastSaved(iso: string): string {
   });
 }
 
+// ─── Period helpers (Income & Category amounts are stored monthly; displayed per period) ──
+
+type SetupPeriod = 'month' | 'biweek' | 'week';
+
+const SETUP_PERIOD_OPTIONS: { key: SetupPeriod; label: string }[] = [
+  { key: 'month',  label: 'Month'   },
+  { key: 'biweek', label: 'Bi-Week' },
+  { key: 'week',   label: 'Week'    },
+];
+
+const PERIOD_LABEL: Record<SetupPeriod, string> = {
+  month:  'Monthly',
+  biweek: 'Bi-Weekly',
+  week:   'Weekly',
+};
+
+const AVG_DAYS_PER_MONTH = 30.4375; // 365.25 / 12
+const PERIOD_DAYS: Record<SetupPeriod, number> = {
+  month:  AVG_DAYS_PER_MONTH,
+  biweek: 14,
+  week:   7,
+};
+
+/** Monthly stored value → display string for the given period */
+function toDisplayAmt(monthlyStr: string, period: SetupPeriod): string {
+  if (period === 'month') return monthlyStr;
+  const monthly = parseFloat(monthlyStr);
+  if (!monthlyStr || isNaN(monthly)) return monthlyStr;
+  return (monthly * PERIOD_DAYS[period] / AVG_DAYS_PER_MONTH).toFixed(2);
+}
+
+/** Period display string → monthly string for storage */
+function toMonthlyAmt(displayStr: string, period: SetupPeriod): string {
+  if (period === 'month') return displayStr;
+  const val = parseFloat(displayStr);
+  if (!displayStr || isNaN(val)) return displayStr;
+  return (val * AVG_DAYS_PER_MONTH / PERIOD_DAYS[period]).toFixed(2);
+}
+
 // ─── Income type selector options ──────────────────────────────────────────────
 
 const INCOME_TYPES: { key: IncomeType; label: string; icon: string }[] = [
@@ -67,6 +107,7 @@ interface IncomeCardProps {
   onChange: (updated: IncomeSource) => void;
   onRemove: () => void;
   canRemove: boolean;
+  period: SetupPeriod;
 }
 
 const createIcStyles = (c: Colors) => StyleSheet.create({
@@ -149,12 +190,20 @@ const createIcStyles = (c: Colors) => StyleSheet.create({
   },
 });
 
-function IncomeCard({ source, onChange, onRemove, canRemove }: IncomeCardProps) {
+function IncomeCard({ source, onChange, onRemove, canRemove, period }: IncomeCardProps) {
   const { colors } = useTheme();
   const icStyles = useMemo(() => createIcStyles(colors), [colors]);
 
   const patch = (fields: Partial<IncomeSource>) => onChange({ ...source, ...fields });
   const isNoIncome = source.type === 'no_income';
+
+  // Local display amount — tracks what the user sees/types in the current period.
+  // Re-computed from the stored monthly value whenever `period` changes.
+  const [displayAmount, setDisplayAmount] = useState(() => toDisplayAmt(source.amount, period));
+  useEffect(() => {
+    setDisplayAmount(toDisplayAmt(source.amount, period));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [period]);
 
   return (
     <View style={[icStyles.card, isNoIncome && icStyles.cardNoIncome]}>
@@ -211,35 +260,42 @@ function IncomeCard({ source, onChange, onRemove, canRemove }: IncomeCardProps) 
         })}
       </View>
 
-      {/* ── Regular income: monthly take-home ── */}
+      {/* ── Regular income: take-home (period-scaled) ── */}
       {source.type === 'income' && (
         <StyledInput
-          label="Monthly take-home"
+          label={`${PERIOD_LABEL[period]} take-home`}
           placeholder="0.00"
           prefix="$"
           keyboardType="decimal-pad"
           returnKeyType="done"
-          value={source.amount}
-          onChangeText={(v) => patch({ amount: v })}
+          value={displayAmount}
+          onChangeText={(v) => {
+            setDisplayAmount(v);
+            patch({ amount: toMonthlyAmt(v, period) });
+          }}
         />
       )}
 
-      {/* ── No Income: monthly draw from savings / reserves ── */}
+      {/* ── No Income: draw from savings (period-scaled) ── */}
       {source.type === 'no_income' && (
         <>
           <View style={icStyles.noIncomeNote}>
             <Text style={icStyles.noIncomeNoteText}>
-              💡 No active income? Enter how much you plan to draw from savings or reserves each month to cover your budget.
+              💡 No active income? Enter how much you plan to draw from savings or reserves each{' '}
+              {period === 'month' ? 'month' : period === 'biweek' ? 'two weeks' : 'week'} to cover your budget.
             </Text>
           </View>
           <StyledInput
-            label="Monthly draw amount"
+            label={`${PERIOD_LABEL[period]} draw amount`}
             placeholder="0.00"
             prefix="$"
             keyboardType="decimal-pad"
             returnKeyType="done"
-            value={source.amount}
-            onChangeText={(v) => patch({ amount: v })}
+            value={displayAmount}
+            onChangeText={(v) => {
+              setDisplayAmount(v);
+              patch({ amount: toMonthlyAmt(v, period) });
+            }}
           />
         </>
       )}
@@ -320,10 +376,13 @@ function DebtRow({ item, onChange, onRemove }: DebtRowProps) {
   const { colors } = useTheme();
   const debtStyles = useMemo(() => createDebtStyles(colors), [colors]);
 
-  const monthly = parseFloat(item.amount) || 0;
-  const total   = parseFloat(item.totalAmount ?? '') || 0;
-  const hasPayoff = monthly > 0 && total > 0;
-  const monthsLeft = hasPayoff ? Math.ceil(total / monthly) : null;
+  const monthly  = parseFloat(item.amount) || 0;
+  const total    = parseFloat(item.totalAmount ?? '') || 0;
+  const current  = parseFloat(item.currentBalance ?? '') || 0;
+  // Use currentBalance for payoff timeline if available, otherwise totalAmount
+  const remaining = current > 0 ? current : total;
+  const hasPayoff = monthly > 0 && remaining > 0;
+  const monthsLeft = hasPayoff ? Math.ceil(remaining / monthly) : null;
 
   return (
     <View style={debtStyles.card}>
@@ -347,9 +406,12 @@ function DebtRow({ item, onChange, onRemove }: DebtRowProps) {
         </TouchableOpacity>
       </View>
 
-      {/* ── Two amount inputs side-by-side ── */}
+      {/* ── Three amount inputs side-by-side ── */}
       <View style={debtStyles.amountLabels}>
         <Text style={debtStyles.amountLabel}>Monthly Payment</Text>
+        <Text style={debtStyles.amountLabel}>
+          Current Balance <Text style={debtStyles.amountLabelOptional}>(optional)</Text>
+        </Text>
         <Text style={debtStyles.amountLabel}>
           Total Balance <Text style={debtStyles.amountLabelOptional}>(optional)</Text>
         </Text>
@@ -363,6 +425,16 @@ function DebtRow({ item, onChange, onRemove }: DebtRowProps) {
             returnKeyType="done"
             value={item.amount}
             onChangeText={(v) => onChange({ ...item, amount: v })}
+          />
+        </View>
+        <View style={{ flex: 1 }}>
+          <StyledInput
+            placeholder="0"
+            prefix="$"
+            keyboardType="decimal-pad"
+            returnKeyType="done"
+            value={item.currentBalance ?? ''}
+            onChangeText={(v) => onChange({ ...item, currentBalance: v || undefined })}
           />
         </View>
         <View style={{ flex: 1 }}>
@@ -546,6 +618,7 @@ interface CategoryRowProps {
   usedNames: string[];
   onChange: (updated: CategoryItem) => void;
   onRemove: () => void;
+  period: SetupPeriod;
 }
 
 const createRowStyles = (c: Colors) => StyleSheet.create({
@@ -623,11 +696,18 @@ const createRowStyles = (c: Colors) => StyleSheet.create({
   },
 });
 
-function CategoryRow({ item, usedNames, onChange, onRemove }: CategoryRowProps) {
+function CategoryRow({ item, usedNames, onChange, onRemove, period }: CategoryRowProps) {
   const { colors } = useTheme();
   const rowStyles = useMemo(() => createRowStyles(colors), [colors]);
 
   const [pickerOpen, setPickerOpen] = useState(false);
+
+  // Local display amount — re-computed from stored monthly value when period changes.
+  const [displayAmount, setDisplayAmount] = useState(() => toDisplayAmt(item.amount, period));
+  useEffect(() => {
+    setDisplayAmount(toDisplayAmt(item.amount, period));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [period]);
 
   const handleSelect = (preset: PresetCategory) => {
     onChange({ ...item, name: preset.name, icon: preset.icon, color: preset.color });
@@ -657,15 +737,18 @@ function CategoryRow({ item, usedNames, onChange, onRemove }: CategoryRowProps) 
           <Text style={rowStyles.categoryChevron}>›</Text>
         </TouchableOpacity>
 
-        {/* Monthly limit input */}
+        {/* Period-scaled limit input */}
         <View style={rowStyles.amount}>
           <StyledInput
             placeholder="0"
-            value={item.amount}
+            value={displayAmount}
             prefix="$"
             keyboardType="decimal-pad"
             returnKeyType="done"
-            onChangeText={(v) => onChange({ ...item, amount: v })}
+            onChangeText={(v) => {
+              setDisplayAmount(v);
+              onChange({ ...item, amount: toMonthlyAmt(v, period) });
+            }}
           />
         </View>
 
@@ -790,11 +873,53 @@ const createStyles = (c: Colors) => StyleSheet.create({
     textAlign: 'center',
     marginTop: spacing[2],
   },
+  simulateBtn: {
+    marginTop: spacing[5],
+    borderRadius: radius.lg,
+    paddingVertical: spacing[3],
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: c.warning,
+    backgroundColor: c.warningLight,
+  },
+  simulateBtnText: {
+    fontSize: typography.sm,
+    fontWeight: typography.semibold,
+    color: c.warning,
+  },
+  periodRow: {
+    flexDirection: 'row',
+    backgroundColor: c.surfaceAlt,
+    borderRadius: radius.full,
+    padding: 3,
+    marginBottom: spacing[3],
+    borderWidth: 1,
+    borderColor: c.border,
+  },
+  periodPill: {
+    flex: 1,
+    paddingVertical: spacing[1] + 1,
+    alignItems: 'center',
+    borderRadius: radius.full,
+  },
+  periodPillActive: {
+    backgroundColor: c.primary,
+  },
+  periodPillText: {
+    fontSize: typography.xs,
+    fontWeight: typography.semibold,
+    color: c.textSecondary,
+    letterSpacing: 0.3,
+  },
+  periodPillTextActive: {
+    color: c.textInverse,
+  },
 });
 
 export default function SetupScreen() {
   // ── Pull data + actions from context ────────────────────────────────────────
-  const { budget, isLoading, saveBudget } = useBudget();
+  const { budget, isLoading, saveBudget, simulateMonthEnd } = useBudget();
   const { colors, isDark } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
@@ -803,6 +928,10 @@ export default function SetupScreen() {
   const [debts,         setDebts]         = useState<DebtItem[]>(budget.debts);
   const [categories,    setCategories]    = useState<CategoryItem[]>(budget.categories);
   const [saveState,     setSaveState]     = useState<SaveState>('idle');
+
+  // ── Per-section period selectors ─────────────────────────────────────────────
+  const [incomePeriod, setIncomePeriod] = useState<SetupPeriod>('month');
+  const [catPeriod,    setCatPeriod]    = useState<SetupPeriod>('month');
 
   /**
    * Once the async load from AsyncStorage completes, sync the form
@@ -816,6 +945,17 @@ export default function SetupScreen() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading]);
+
+  // Re-sync debts whenever the screen comes into focus so balance changes
+  // made on the Dashboard (payments, deletions) are reflected here.
+  useFocusEffect(
+    useCallback(() => {
+      if (!isLoading) {
+        setDebts(budget.debts);
+      }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isLoading, budget.debts]),
+  );
 
   // ── Income handlers ──────────────────────────────────────────────────────────
 
@@ -933,13 +1073,29 @@ export default function SetupScreen() {
         <Card style={styles.section}>
           <SectionHeader
             title="Income Sources"
-            subtitle="Add every source of monthly income"
+            subtitle={`Add every source of ${PERIOD_LABEL[incomePeriod].toLowerCase()} income`}
             accentColor={colors.accent}
           />
+          {/* Period pill selector */}
+          <View style={styles.periodRow}>
+            {SETUP_PERIOD_OPTIONS.map(({ key, label }) => (
+              <TouchableOpacity
+                key={key}
+                style={[styles.periodPill, incomePeriod === key && styles.periodPillActive]}
+                onPress={() => setIncomePeriod(key)}
+                activeOpacity={0.75}
+              >
+                <Text style={[styles.periodPillText, incomePeriod === key && styles.periodPillTextActive]}>
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
           {incomeSources.map((source) => (
             <IncomeCard
               key={source.id}
               source={source}
+              period={incomePeriod}
               onChange={(updated) => updateIncome(source.id, updated)}
               onRemove={() => removeIncome(source.id)}
               canRemove={incomeSources.length > 1}
@@ -948,7 +1104,43 @@ export default function SetupScreen() {
           <AddButton label="Add Income Source" onPress={addIncome} />
         </Card>
 
-        {/* ── Section 2: Debts ── */}
+        {/* ── Section 2: Budget Categories ── */}
+        <Card style={styles.section}>
+          <SectionHeader
+            title="Budget Categories"
+            subtitle={`Set a ${PERIOD_LABEL[catPeriod].toLowerCase()} limit for each category`}
+            accentColor={colors.primary}
+          />
+          {/* Period pill selector */}
+          <View style={styles.periodRow}>
+            {SETUP_PERIOD_OPTIONS.map(({ key, label }) => (
+              <TouchableOpacity
+                key={key}
+                style={[styles.periodPill, catPeriod === key && styles.periodPillActive]}
+                onPress={() => setCatPeriod(key)}
+                activeOpacity={0.75}
+              >
+                <Text style={[styles.periodPillText, catPeriod === key && styles.periodPillTextActive]}>
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {categories.map((c) => (
+            <CategoryRow
+              key={c.id}
+              item={c}
+              period={catPeriod}
+              // Pass names from every OTHER row so the picker grays them out
+              usedNames={categories.filter((x) => x.id !== c.id).map((x) => x.name)}
+              onChange={(updated) => updateCategory(c.id, updated)}
+              onRemove={() => removeCategory(c.id)}
+            />
+          ))}
+          <AddButton label="Add Category" onPress={addCategory} />
+        </Card>
+
+        {/* ── Section 3: Debts ── */}
         <Card style={styles.section}>
           <SectionHeader
             title="Debts"
@@ -964,26 +1156,6 @@ export default function SetupScreen() {
             />
           ))}
           <AddButton label="Add Debt" onPress={addDebt} />
-        </Card>
-
-        {/* ── Section 3: Budget Categories ── */}
-        <Card style={styles.section}>
-          <SectionHeader
-            title="Budget Categories"
-            subtitle="Set a monthly limit for each category"
-            accentColor={colors.primary}
-          />
-          {categories.map((c) => (
-            <CategoryRow
-              key={c.id}
-              item={c}
-              // Pass names from every OTHER row so the picker grays them out
-              usedNames={categories.filter((x) => x.id !== c.id).map((x) => x.name)}
-              onChange={(updated) => updateCategory(c.id, updated)}
-              onRemove={() => removeCategory(c.id)}
-            />
-          ))}
-          <AddButton label="Add Category" onPress={addCategory} />
         </Card>
 
         {/* ── Save button ── */}
@@ -1007,6 +1179,15 @@ export default function SetupScreen() {
             Last saved {formatLastSaved(budget.lastSaved)}
           </Text>
         )}
+
+        {/* ── Dev: Simulate month end ── */}
+        <TouchableOpacity
+          style={styles.simulateBtn}
+          onPress={simulateMonthEnd}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.simulateBtnText}>🧪 Simulate Month End</Text>
+        </TouchableOpacity>
 
         <View style={{ height: spacing[8] }} />
       </ScrollView>
