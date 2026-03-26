@@ -946,15 +946,17 @@ export default function SetupScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading]);
 
-  // Re-sync debts whenever the screen comes into focus so balance changes
-  // made on the Dashboard (payments, deletions) are reflected here.
+  // Re-sync all form fields whenever the screen comes into focus so any
+  // external changes (AI adjustments, Dashboard payments, etc.) are reflected.
   useFocusEffect(
     useCallback(() => {
       if (!isLoading) {
+        setIncomeSources(budget.incomeSources);
         setDebts(budget.debts);
+        setCategories(budget.categories);
       }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isLoading, budget.debts]),
+    }, [isLoading, budget.incomeSources, budget.debts, budget.categories]),
   );
 
   // ── Income handlers ──────────────────────────────────────────────────────────

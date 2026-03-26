@@ -7,7 +7,7 @@
  *  • About       — version info
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import {
   ScrollView,
   View,
@@ -17,8 +17,10 @@ import {
   StyleSheet,
   SafeAreaView,
   StatusBar,
+  Alert,
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth }  from '../context/AuthContext';
 import { typography, spacing, radius } from '../theme';
 
 // ─── Small presentational pieces ─────────────────────────────────────────────
@@ -145,6 +147,25 @@ function SettingGroup({ children }: { children: React.ReactNode }) {
 
 export default function SettingsScreen() {
   const { colors, isDark, toggleDark } = useTheme();
+  const { user, signOut } = useAuth();
+
+  // Derive display values from the Supabase user object
+  const email      = user?.email ?? '—';
+  const initials   = email !== '—' ? email[0].toUpperCase() : '?';
+  const memberSince = user?.created_at
+    ? new Date(user.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    : '—';
+
+  const handleSignOut = useCallback(() => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Sign Out', style: 'destructive', onPress: signOut },
+      ],
+    );
+  }, [signOut]);
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
@@ -162,20 +183,43 @@ export default function SettingsScreen() {
 
         {/* ── ACCOUNT ─────────────────────────────────────── */}
         <SectionLabel label="Account" />
+
+        {/* User profile card */}
+        <View style={[styles.profileCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
+            <Text style={[styles.avatarText, { color: colors.textInverse }]}>{initials}</Text>
+          </View>
+          <View style={styles.profileInfo}>
+            <Text style={[styles.profileEmail, { color: colors.textPrimary }]} numberOfLines={1}>
+              {email}
+            </Text>
+            <Text style={[styles.profileMeta, { color: colors.textMuted }]}>
+              Member since {memberSince}
+            </Text>
+          </View>
+        </View>
+
         <SettingGroup>
           <SettingRow
-            icon="👤"
-            label="Sign In"
-            sublabel="Sync your budget across devices"
-            showChevron
-            onPress={() => {/* future: open auth flow */}}
-          />
-          <SettingRow
             icon="☁️"
-            label="Cloud Backup"
-            sublabel="Coming soon"
+            label="Cloud Sync"
+            sublabel="Your data is saved to the cloud"
           />
         </SettingGroup>
+
+        {/* Sign out — separate group so it's visually distinct */}
+        <View style={{ marginTop: spacing[3] }}>
+          <SettingGroup>
+            <SettingRow
+              icon="🚪"
+              label="Sign Out"
+              onPress={handleSignOut}
+              right={<Text style={[styles.signOutChevron, { color: colors.danger }]}>›</Text>}
+              isFirst
+              isLast
+            />
+          </SettingGroup>
+        </View>
 
         {/* ── PREFERENCES ─────────────────────────────────── */}
         <SectionLabel label="Preferences" />
@@ -302,5 +346,43 @@ const styles = StyleSheet.create({
     fontSize: typography.xs,
     textAlign: 'center',
     lineHeight: typography.xs * 1.6,
+  },
+
+  // Account / profile
+  profileCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    padding: spacing[4],
+    marginBottom: spacing[3],
+    gap: spacing[3],
+  },
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    fontSize: typography.lg,
+    fontWeight: typography.bold,
+  },
+  profileInfo: {
+    flex: 1,
+  },
+  profileEmail: {
+    fontSize: typography.base,
+    fontWeight: typography.semibold,
+    marginBottom: 2,
+  },
+  profileMeta: {
+    fontSize: typography.xs,
+  },
+  signOutChevron: {
+    fontSize: 22,
+    lineHeight: 24,
+    marginLeft: spacing[2],
   },
 });

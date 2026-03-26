@@ -38,6 +38,37 @@ function uid(): string {
   return Math.random().toString(36).slice(2, 9);
 }
 
+/**
+ * Parses a string with **bold** and *italic* markdown into nested <Text> nodes.
+ * Inherits color/size from the parent <Text> — only weight/style is overridden.
+ */
+function renderMarkdownInline(raw: string): React.ReactNode[] {
+  const parts: Array<{ text: string; bold?: boolean; italic?: boolean }> = [];
+  const regex = /\*\*(.+?)\*\*|\*(.+?)\*/gs;
+  let cursor = 0;
+  let m: RegExpExecArray | null;
+
+  while ((m = regex.exec(raw)) !== null) {
+    if (m.index > cursor) parts.push({ text: raw.slice(cursor, m.index) });
+    if (m[1] !== undefined) parts.push({ text: m[1], bold: true });
+    else                    parts.push({ text: m[2], italic: true });
+    cursor = regex.lastIndex;
+  }
+  if (cursor < raw.length) parts.push({ text: raw.slice(cursor) });
+
+  return parts.map((p, i) => (
+    <Text
+      key={i}
+      style={[
+        p.bold   ? { fontWeight: 'bold'   as const } : undefined,
+        p.italic ? { fontStyle: 'italic' as const } : undefined,
+      ]}
+    >
+      {p.text}
+    </Text>
+  ));
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type MessageRole = 'user' | 'ai';
@@ -324,7 +355,7 @@ function MessageBubble({
 
       <View style={[s.bubble, isUser ? s.bubbleUser : s.bubbleAI, shadows.sm]}>
         <Text style={[s.text, isUser ? s.textUser : s.textAI]}>
-          {message.text}
+          {isUser ? message.text : renderMarkdownInline(message.text)}
         </Text>
 
         {message.adjustments && message.adjustments.length > 0 && (
@@ -533,8 +564,8 @@ export default function AIAdvisorScreen() {
 
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={0}
       >
         {/* ── Header ── */}
         <View style={styles.header}>

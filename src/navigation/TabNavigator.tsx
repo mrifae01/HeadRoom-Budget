@@ -61,7 +61,11 @@ export default function TabNavigator() {
     >
       <Tab.Screen name="Setup"      component={SetupScreen}     />
       <Tab.Screen name="Dashboard"  component={DashboardScreen} />
-      <Tab.Screen name="AI Advisor" component={AIAdvisorScreen} />
+      <Tab.Screen
+        name="AI Advisor"
+        component={AIAdvisorScreen}
+        options={{ tabBarHideOnKeyboard: true }}
+      />
       <Tab.Screen name="Settings"   component={SettingsScreen}  />
     </Tab.Navigator>
   );

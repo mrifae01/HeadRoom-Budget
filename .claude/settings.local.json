@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(Test-Path \"C:\\\\Users\\\\mrifa\\\\OneDrive\\\\Desktop\\\\Repos\\\\HeadRoom_Official\\\\HeadRoom-Budget\\\\node_modules\\\\expo\\\\tsconfig.base.json\")"
+    ]
+  }
+}
