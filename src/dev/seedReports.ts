@@ -10,7 +10,7 @@
  */
 
 import { MonthlyRecord, Transaction } from '../types/budget';
-import { saveMonthlyRecord, loadMonthlyRecord } from '../storage/reports';
+import { saveMonthlyRecord, loadMonthlyRecord, deleteMonthlyRecord } from '../storage/reports';
 
 // ─── Shared budget snapshot (matches the app's DEFAULT_BUDGET) ────────────────
 
@@ -197,7 +197,7 @@ const FEB_2026: Transaction[] = [
  * Already-existing months are skipped (idempotent).
  * Returns the number of months actually written.
  */
-export async function seedSampleReports(): Promise<number> {
+export async function seedSampleReports(userId: string): Promise<number> {
   const months: [string, Transaction[]][] = [
     ['2025-11', NOV_2025],
     ['2025-12', DEC_2025],
@@ -207,25 +207,17 @@ export async function seedSampleReports(): Promise<number> {
 
   let written = 0;
   for (const [month, transactions] of months) {
-    const existing = await loadMonthlyRecord(month);
+    const existing = await loadMonthlyRecord(month, userId);
     if (existing) continue; // already seeded — leave it alone
     const record = buildRecord(month, transactions);
-    await saveMonthlyRecord(record);
+    await saveMonthlyRecord(record, userId);
     written++;
   }
   return written;
 }
 
 /** Remove all seeded records (useful for resetting during development). */
-export async function clearSampleReports(): Promise<void> {
-  const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+export async function clearSampleReports(userId: string): Promise<void> {
   const months = ['2025-11', '2025-12', '2026-01', '2026-02'];
-  await Promise.all(
-    months.map((m) => AsyncStorage.removeItem(`@headroom/month_${m}`)),
-  );
-  // Rebuild index without these months
-  const { getMonthsIndex } = await import('../storage/reports');
-  const index = await getMonthsIndex();
-  const filtered = index.filter((m) => !months.includes(m));
-  await AsyncStorage.setItem('@headroom/months_index', JSON.stringify(filtered));
+  await Promise.all(months.map((m) => deleteMonthlyRecord(m, userId)));
 }

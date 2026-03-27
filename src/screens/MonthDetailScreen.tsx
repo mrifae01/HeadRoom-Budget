@@ -27,6 +27,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { typography, spacing, radius, shadows } from '../theme';
 import { Colors } from '../theme';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth }  from '../context/AuthContext';
 import { RootStackParamList } from '../navigation/RootNavigator';
 import { MonthlyRecord, Transaction } from '../types/budget';
 import { loadMonthlyRecord, formatMonthLabel } from '../storage/reports';
@@ -397,17 +398,19 @@ export default function MonthDetailScreen() {
   const { month }  = route.params;
 
   const { colors, isDark } = useTheme();
+  const { user } = useAuth();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const [record,    setRecord]    = useState<MonthlyRecord | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    loadMonthlyRecord(month)
+    if (!user) return;
+    loadMonthlyRecord(month, user.id)
       .then(setRecord)
       .catch((err) => console.error('[MonthDetailScreen] load failed:', err))
       .finally(() => setIsLoading(false));
-  }, [month]);
+  }, [month, user]);
 
   // Build a lookup for cat meta (icon, color) by name
   const catMeta = useMemo(() => {

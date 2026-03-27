@@ -477,6 +477,21 @@ interface CategoryPickerModalProps {
   onClose: () => void;
 }
 
+// ─── Custom category options ───────────────────────────────────────────────────
+
+const EMOJI_OPTIONS = [
+  '💼', '🏡', '🚗', '✈️', '🎓', '💊', '👕', '📚',
+  '🎵', '🏋️', '🍕', '☕', '💇', '🎁', '🌴', '🔧',
+  '💻', '📱', '🌙', '🏖️', '🎮', '🐕', '🌱', '⚽',
+  '🎨', '📸', '🏥', '🚀', '🛍️', '🧴',
+];
+
+const COLOR_OPTIONS = [
+  '#6366F1', '#3B82F6', '#0EA5E9', '#06B6D4',
+  '#10B981', '#84CC16', '#F59E0B', '#F97316',
+  '#EF4444', '#EC4899', '#8B5CF6', '#A78BFA',
+];
+
 const createPickerStyles = (c: Colors) => StyleSheet.create({
   sheet: {
     flex: 1,
@@ -551,15 +566,107 @@ const createPickerStyles = (c: Colors) => StyleSheet.create({
     color: c.textMuted,
     marginTop: 2,
   },
+
+  // ── Custom form ──
+  customForm: {
+    padding: spacing[5],
+    paddingBottom: spacing[10],
+  },
+  formLabel: {
+    fontSize: typography.sm,
+    fontWeight: typography.semibold as any,
+    color: c.textSecondary,
+    marginBottom: spacing[2],
+  },
+  emojiGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing[2],
+  },
+  emojiCell: {
+    width: 52,
+    height: 52,
+    borderRadius: radius.md,
+    backgroundColor: c.surface,
+    borderWidth: 1.5,
+    borderColor: c.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emojiCellSelected: {
+    backgroundColor: c.primaryLight,
+    borderWidth: 2,
+  },
+  emojiCellText: { fontSize: 24 },
+  colorGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing[3],
+  },
+  colorSwatch: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+  },
+  colorSwatchSelected: {
+    borderWidth: 3,
+    borderColor: c.textPrimary,
+  },
+  preview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    marginTop: spacing[5],
+    padding: spacing[4],
+    borderRadius: radius.lg,
+    borderWidth: 1.5,
+  },
+  previewDot: { width: 8, height: 8, borderRadius: 4 },
+  previewIcon: { fontSize: 20 },
+  previewName: {
+    fontSize: typography.base,
+    fontWeight: typography.semibold as any,
+  },
+  confirmBtn: {
+    marginTop: spacing[6],
+    paddingVertical: spacing[4],
+    borderRadius: radius.md,
+    alignItems: 'center',
+  },
+  confirmBtnText: {
+    fontSize: typography.base,
+    fontWeight: typography.bold as any,
+  },
 });
 
 /**
- * Full-screen modal showing a 2-column grid of preset categories.
- * Already-used categories are grayed out to prevent duplicates.
+ * Full-screen modal with two modes:
+ *  'pick'   — 2-column grid of preset categories (grayed out if already used)
+ *  'create' — custom form: name + emoji picker + color swatch + live preview
  */
 function CategoryPickerModal({ visible, usedNames, onSelect, onClose }: CategoryPickerModalProps) {
   const { colors } = useTheme();
   const pickerStyles = useMemo(() => createPickerStyles(colors), [colors]);
+
+  const [mode,        setMode]        = useState<'pick' | 'create'>('pick');
+  const [customName,  setCustomName]  = useState('');
+  const [customIcon,  setCustomIcon]  = useState('💼');
+  const [customColor, setCustomColor] = useState('#6366F1');
+
+  // Reset the custom form every time the modal opens
+  useEffect(() => {
+    if (visible) {
+      setMode('pick');
+      setCustomName('');
+      setCustomIcon('💼');
+      setCustomColor('#6366F1');
+    }
+  }, [visible]);
+
+  const handleConfirmCustom = () => {
+    if (!customName.trim()) return;
+    onSelect({ name: customName.trim(), icon: customIcon, color: customColor });
+  };
 
   return (
     <Modal
@@ -569,42 +676,145 @@ function CategoryPickerModal({ visible, usedNames, onSelect, onClose }: Category
       onRequestClose={onClose}
     >
       <SafeAreaView style={pickerStyles.sheet}>
-        {/* Header */}
+
+        {/* ── Header ── */}
         <View style={pickerStyles.header}>
-          <Text style={pickerStyles.headerTitle}>Choose a Category</Text>
-          <TouchableOpacity onPress={onClose} accessibilityLabel="Close picker">
-            <Text style={pickerStyles.headerClose}>Done</Text>
-          </TouchableOpacity>
+          {mode === 'create' ? (
+            <TouchableOpacity onPress={() => setMode('pick')} accessibilityLabel="Back to presets">
+              <Text style={pickerStyles.headerClose}>← Presets</Text>
+            </TouchableOpacity>
+          ) : (
+            <Text style={pickerStyles.headerTitle}>Choose a Category</Text>
+          )}
+
+          {mode === 'pick' ? (
+            <TouchableOpacity onPress={() => setMode('create')} accessibilityLabel="Create custom category">
+              <Text style={pickerStyles.headerClose}>+ Custom</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity onPress={onClose} accessibilityLabel="Close picker">
+              <Text style={pickerStyles.headerClose}>Done</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
-        {/* 2-column grid */}
-        <FlatList
-          data={PRESET_CATEGORIES}
-          keyExtractor={(item) => item.name}
-          numColumns={2}
-          contentContainerStyle={pickerStyles.grid}
-          columnWrapperStyle={pickerStyles.gridRow}
-          renderItem={({ item: preset }) => {
-            const isUsed = usedNames.includes(preset.name);
-            return (
+        {mode === 'pick' ? (
+
+          /* ── Preset grid ── */
+          <FlatList
+            data={PRESET_CATEGORIES}
+            keyExtractor={(item) => item.name}
+            numColumns={2}
+            contentContainerStyle={pickerStyles.grid}
+            columnWrapperStyle={pickerStyles.gridRow}
+            renderItem={({ item: preset }) => {
+              const isUsed = usedNames.includes(preset.name);
+              return (
+                <TouchableOpacity
+                  style={[pickerStyles.cell, isUsed && pickerStyles.cellUsed]}
+                  onPress={() => !isUsed && onSelect(preset)}
+                  activeOpacity={isUsed ? 1 : 0.7}
+                  accessibilityLabel={`Select ${preset.name}`}
+                  accessibilityState={{ disabled: isUsed }}
+                >
+                  <View style={[pickerStyles.cellDot, { backgroundColor: preset.color }]} />
+                  <Text style={pickerStyles.cellIcon}>{preset.icon}</Text>
+                  <Text style={[pickerStyles.cellName, isUsed && pickerStyles.cellNameUsed]}>
+                    {preset.name}
+                  </Text>
+                  {isUsed && <Text style={pickerStyles.cellUsedBadge}>Added</Text>}
+                </TouchableOpacity>
+              );
+            }}
+          />
+
+        ) : (
+
+          /* ── Custom category form ── */
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <ScrollView
+              contentContainerStyle={pickerStyles.customForm}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {/* Name */}
+              <Text style={pickerStyles.formLabel}>Category Name</Text>
+              <StyledInput
+                placeholder="e.g. Kids Activities, Side Hustle…"
+                value={customName}
+                onChangeText={setCustomName}
+                returnKeyType="done"
+              />
+
+              {/* Emoji picker */}
+              <Text style={[pickerStyles.formLabel, { marginTop: spacing[5] }]}>Icon</Text>
+              <View style={pickerStyles.emojiGrid}>
+                {EMOJI_OPTIONS.map((emoji) => (
+                  <TouchableOpacity
+                    key={emoji}
+                    style={[
+                      pickerStyles.emojiCell,
+                      customIcon === emoji && pickerStyles.emojiCellSelected,
+                      customIcon === emoji && { borderColor: customColor },
+                    ]}
+                    onPress={() => setCustomIcon(emoji)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={pickerStyles.emojiCellText}>{emoji}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Color picker */}
+              <Text style={[pickerStyles.formLabel, { marginTop: spacing[5] }]}>Colour</Text>
+              <View style={pickerStyles.colorGrid}>
+                {COLOR_OPTIONS.map((color) => (
+                  <TouchableOpacity
+                    key={color}
+                    style={[
+                      pickerStyles.colorSwatch,
+                      { backgroundColor: color },
+                      customColor === color && pickerStyles.colorSwatchSelected,
+                    ]}
+                    onPress={() => setCustomColor(color)}
+                    activeOpacity={0.8}
+                  />
+                ))}
+              </View>
+
+              {/* Live preview */}
+              {customName.trim().length > 0 && (
+                <View style={[
+                  pickerStyles.preview,
+                  { borderColor: customColor, backgroundColor: customColor + '18' },
+                ]}>
+                  <View style={[pickerStyles.previewDot, { backgroundColor: customColor }]} />
+                  <Text style={pickerStyles.previewIcon}>{customIcon}</Text>
+                  <Text style={[pickerStyles.previewName, { color: colors.textPrimary }]}>
+                    {customName.trim()}
+                  </Text>
+                </View>
+              )}
+
+              {/* Add button */}
               <TouchableOpacity
-                style={[pickerStyles.cell, isUsed && pickerStyles.cellUsed]}
-                onPress={() => !isUsed && onSelect(preset)}
-                activeOpacity={isUsed ? 1 : 0.7}
-                accessibilityLabel={`Select ${preset.name}`}
-                accessibilityState={{ disabled: isUsed }}
+                style={[
+                  pickerStyles.confirmBtn,
+                  { backgroundColor: colors.primary },
+                  !customName.trim() && { opacity: 0.4 },
+                ]}
+                onPress={handleConfirmCustom}
+                disabled={!customName.trim()}
+                activeOpacity={0.85}
               >
-                {/* Color accent dot */}
-                <View style={[pickerStyles.cellDot, { backgroundColor: preset.color }]} />
-                <Text style={pickerStyles.cellIcon}>{preset.icon}</Text>
-                <Text style={[pickerStyles.cellName, isUsed && pickerStyles.cellNameUsed]}>
-                  {preset.name}
+                <Text style={[pickerStyles.confirmBtnText, { color: colors.textInverse }]}>
+                  Add Category
                 </Text>
-                {isUsed && <Text style={pickerStyles.cellUsedBadge}>Added</Text>}
               </TouchableOpacity>
-            );
-          }}
-        />
+            </ScrollView>
+          </KeyboardAvoidingView>
+
+        )}
       </SafeAreaView>
     </Modal>
   );

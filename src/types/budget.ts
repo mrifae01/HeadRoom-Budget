@@ -67,6 +67,30 @@ export interface Transaction {
   note?: string;
 }
 
+// ─── Savings goals ────────────────────────────────────────────────────────────
+
+/**
+ * A savings goal or "saving for" target.
+ * - 'goal'  → structured with a target amount (e.g. Emergency Fund)
+ * - 'want'  → discretionary, user decides how much surplus to allocate
+ */
+export type SavingsGoalType = 'goal' | 'want';
+
+export interface SavingsGoal {
+  id: string;
+  name: string;
+  /** Emoji icon chosen by the user */
+  icon: string;
+  /** Target dollar amount. 0 = open-ended savings goal */
+  targetAmount: number;
+  /** Running total contributed so far */
+  currentAmount: number;
+  type: SavingsGoalType;
+  /** ISO date string set when currentAmount first reaches targetAmount */
+  completedAt?: string;
+  createdAt: string;
+}
+
 // ─── Monthly archive record ───────────────────────────────────────────────────
 
 /**
@@ -105,6 +129,8 @@ export interface MonthlyRecord {
       spent: number;
       limit: number;
     }[];
+    /** Goals that were completed during this month */
+    goalsAchieved?: { id: string; name: string; icon: string; targetAmount: number }[];
   };
 }
 
@@ -128,4 +154,18 @@ export interface BudgetData {
    * Null on first launch — initialised silently without showing the prompt.
    */
   lastArchivedMonth: string | null;
+
+  // ─── Goals ────────────────────────────────────────────────────────────────
+  savingsGoals: SavingsGoal[];
+  /**
+   * "Potential Savings" — unallocated surplus waiting to be assigned to a goal.
+   * Grows when a bi-weekly period closes with leftover budget.
+   */
+  savingsPool: number;
+  /**
+   * Bi-weekly period key of the last surplus prompt shown.
+   * Format: "YYYY-MM-A" (1st–15th) or "YYYY-MM-B" (16th–end).
+   * Prevents the same period from triggering the prompt twice.
+   */
+  lastSurplusPromptPeriod: string | null;
 }

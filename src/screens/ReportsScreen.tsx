@@ -21,6 +21,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { typography, spacing, radius, shadows } from '../theme';
 import { Colors } from '../theme';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth }  from '../context/AuthContext';
 import { RootStackParamList } from '../navigation/RootNavigator';
 import { MonthlyRecord } from '../types/budget';
 import {
@@ -349,6 +350,7 @@ const createStyles = (c: Colors) => StyleSheet.create({
 export default function ReportsScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { colors, isDark } = useTheme();
+  const { user } = useAuth();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const [records,   setRecords]   = useState<MonthlyRecord[]>([]);
@@ -357,14 +359,15 @@ export default function ReportsScreen() {
 
   // Load all monthly records (extracted so we can call it after seeding too)
   const loadRecords = useCallback(async () => {
+    if (!user) return;
     try {
-      const index  = await getMonthsIndex();
-      const loaded = await Promise.all(index.map((m) => loadMonthlyRecord(m)));
+      const index  = await getMonthsIndex(user.id);
+      const loaded = await Promise.all(index.map((m) => loadMonthlyRecord(m, user.id)));
       setRecords(loaded.filter((r): r is MonthlyRecord => r !== null));
     } catch (err) {
       console.error('[ReportsScreen] load failed:', err);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     loadRecords().finally(() => setIsLoading(false));
@@ -384,7 +387,7 @@ export default function ReportsScreen() {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
-            await deleteMonthlyRecord(record.month);
+            await deleteMonthlyRecord(record.month, user!.id);
             await loadRecords();
           },
         },
@@ -397,7 +400,7 @@ export default function ReportsScreen() {
   const handleSeed = useCallback(async () => {
     setIsSeeding(true);
     try {
-      const written = await seedSampleReports();
+      const written = await seedSampleReports(user!.id);
       await loadRecords();
       if (written === 0) {
         Alert.alert('Already seeded', 'Sample data is already present.');
@@ -420,7 +423,7 @@ export default function ReportsScreen() {
           text: 'Clear',
           style: 'destructive',
           onPress: async () => {
-            await clearSampleReports();
+            await clearSampleReports(user!.id);
             await loadRecords();
           },
         },

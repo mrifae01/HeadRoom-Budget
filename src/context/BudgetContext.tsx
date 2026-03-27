@@ -1,11 +1,12 @@
 /**
- * BudgetContext — app-wide budget state.
+ * BudgetContext — app-wide budget state backed by Supabase.
  *
- * Wraps the app so any screen can read or update budget data without
- * prop-drilling. Handles the load-on-startup and save logic.
+ * Budget setup (income, debts, categories) lives in the `budgets` table.
+ * Live transactions live in the `transactions` table (one row each).
+ * Archived months live in `monthly_records`.
  *
- * Usage:
- *   const { budget, saveBudget, isLoading } = useBudget();
+ * The public API (useBudget hook + BudgetContextValue shape) is unchanged —
+ * screens and components don't need to know about the storage layer.
  */
 
 import React, {
@@ -17,24 +18,35 @@ import React, {
   useRef,
   ReactNode,
 } from 'react';
-import { BudgetData, IncomeSource, DebtItem, CategoryItem, Transaction, MonthlyRecord } from '../types/budget';
 import {
-  saveBudget as persistBudget,
+  BudgetData,
+  IncomeSource,
+  DebtItem,
+  CategoryItem,
+  Transaction,
+  MonthlyRecord,
+  SavingsGoal,
+} from '../types/budget';
+import {
+  saveBudget    as persistBudget,
   writeRaw,
   loadBudget,
+  loadTransactions,
+  insertTransaction,
+  updateTransaction,
+  deleteTransactionById,
+  deleteTransactionsBefore,
 } from '../storage/budget';
 import { saveMonthlyRecord, loadMonthlyRecord } from '../storage/reports';
-import { findPreset } from '../data/categories';
+import { useAuth } from './AuthContext';
 
 // ─── Month-key helpers ────────────────────────────────────────────────────────
 
-/** Returns the current calendar month as "YYYY-MM". */
 function currentMonthKey(): string {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
-/** Returns the month before the given "YYYY-MM" key. */
 function prevMonthKey(key: string): string {
   const [y, m] = key.split('-').map(Number);
   return m === 1
@@ -42,39 +54,118 @@ function prevMonthKey(key: string): string {
     : `${y}-${String(m - 1).padStart(2, '0')}`;
 }
 
+// ─── Bi-weekly period helpers ─────────────────────────────────────────────────
+
+/**
+ * Returns a stable key for the current bi-weekly period.
+ * "YYYY-MM-A" = 1st–15th, "YYYY-MM-B" = 16th–end of month.
+ */
+function currentBiweeklyKey(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  return `${y}-${m}-${now.getDate() <= 15 ? 'A' : 'B'}`;
+}
+
+/** Returns the key for the period immediately before the given key. */
+function prevBiweeklyKey(key: string): string {
+  const half = key.slice(8); // 'A' or 'B'
+  if (half === 'B') return key.slice(0, 8) + 'A';
+  // half === 'A' → go to previous month's B half
+  const [y, m] = [parseInt(key.slice(0, 4)), parseInt(key.slice(5, 7))];
+  const prev = new Date(y, m - 2, 1); // month is 0-indexed, m-2 = previous month
+  return `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}-B`;
+}
+
+/** ISO date range for a bi-weekly period key (inclusive). */
+function biweeklyRange(key: string): { start: string; end: string } {
+  const year  = parseInt(key.slice(0, 4));
+  const month = parseInt(key.slice(5, 7)); // 1-indexed
+  const half  = key.slice(8);
+  if (half === 'A') {
+    return {
+      start: `${key.slice(0, 7)}-01`,
+      end:   `${key.slice(0, 7)}-15`,
+    };
+  }
+  const lastDay = new Date(year, month, 0).getDate(); // month is already 1-indexed so this gives last day
+  return {
+    start: `${key.slice(0, 7)}-16`,
+    end:   `${key.slice(0, 7)}-${String(lastDay).padStart(2, '0')}`,
+  };
+}
+
+/**
+ * Calculates the surplus for a given bi-weekly period from live transactions.
+ * Returns 0 if the period is not within the currently loaded transactions
+ * (i.e. it crossed into a previously archived month).
+ */
+function calcBiweeklySurplus(budget: BudgetData, periodKey: string): number {
+  const { start, end } = biweeklyRange(periodKey);
+
+  // Determine how many days are in the calendar month of this period
+  const [y, m] = [parseInt(periodKey.slice(0, 4)), parseInt(periodKey.slice(5, 7))];
+  const daysInMonth = new Date(y, m, 0).getDate();
+
+  const half       = periodKey.slice(8);
+  const periodDays = half === 'A'
+    ? 15
+    : daysInMonth - 15;
+
+  const totalIncome    = budget.incomeSources.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+  const totalDebt      = budget.debts.reduce((s, d) => s + (parseFloat(d.amount) || 0), 0);
+  const spendable      = Math.max(totalIncome - totalDebt, 0);
+  const periodBudget   = (spendable / daysInMonth) * periodDays;
+
+  const debtNames      = new Set(budget.debts.map((d) => d.name));
+  const periodSpent    = budget.transactions
+    .filter((tx) => tx.date >= start && tx.date <= end && !debtNames.has(tx.categoryName))
+    .reduce((s, tx) => s + tx.amount, 0);
+
+  return Math.max(0, periodBudget - periodSpent);
+}
+
+// ─── Strip transactions for setup-only writes ─────────────────────────────────
+
+/** Returns BudgetData without the transactions array — safe to pass to writeRaw. */
+function setupOnly(b: BudgetData): Omit<BudgetData, 'transactions'> {
+  const { transactions: _ignored, ...rest } = b;
+  return rest;
+}
+
 // ─── Auto-archive helper ──────────────────────────────────────────────────────
 
 /**
- * Scans `budget.transactions` for entries belonging to months before the
- * current calendar month.  Each past month gets a `MonthlyRecord` saved
- * to AsyncStorage (skipped if it already exists so we never overwrite).
- * Returns the budget with only current-month transactions remaining so the
- * live Dashboard always shows a clean slate.
+ * Archives any transactions from months before the current calendar month.
+ * Each past month gets its own MonthlyRecord in Supabase (skipped if one
+ * already exists).  Past transactions are then deleted from the `transactions`
+ * table and stripped from the returned BudgetData.
  */
-async function archivePreviousMonths(budget: BudgetData): Promise<BudgetData> {
-  const now          = new Date();
-  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+async function archivePreviousMonths(
+  budget: BudgetData,
+  userId: string,
+): Promise<BudgetData> {
+  const currentMonth = currentMonthKey();
 
-  // Collect transactions that belong to previous months
+  // Group transactions by month for any month before the current one
   const pastTxByMonth = new Map<string, Transaction[]>();
   for (const tx of budget.transactions) {
-    const m = tx.date.slice(0, 7); // 'YYYY-MM'
+    const m = tx.date.slice(0, 7);
     if (m < currentMonth) {
       if (!pastTxByMonth.has(m)) pastTxByMonth.set(m, []);
       pastTxByMonth.get(m)!.push(tx);
     }
   }
 
-  if (pastTxByMonth.size === 0) return budget; // nothing to archive
+  if (pastTxByMonth.size === 0) return budget;
 
   const totalIncome   = budget.incomeSources.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
   const debtTotal     = budget.debts.reduce((s, d) => s + (parseFloat(d.amount) || 0), 0);
   const totalBudgeted = budget.categories.reduce((s, c) => s + (parseFloat(c.amount) || 0), 0);
 
   for (const [month, txs] of pastTxByMonth.entries()) {
-    // Don't overwrite an existing archive (user may have opened the app multiple
-    // times in the same new month — we only want the first archive to stick)
-    const alreadyArchived = await loadMonthlyRecord(month);
+    // Don't overwrite an existing archive
+    const alreadyArchived = await loadMonthlyRecord(month, userId);
     if (alreadyArchived) continue;
 
     const categoryBreakdown = budget.categories.map((cat) => ({
@@ -87,7 +178,6 @@ async function archivePreviousMonths(budget: BudgetData): Promise<BudgetData> {
       limit: parseFloat(cat.amount) || 0,
     }));
 
-    // Include "Other/Misc" spending that doesn't match any named category
     const knownNames = new Set(budget.categories.map((c) => c.name));
     const otherSpent = txs
       .filter((t) => !knownNames.has(t.categoryName))
@@ -103,12 +193,10 @@ async function archivePreviousMonths(budget: BudgetData): Promise<BudgetData> {
 
     const record: MonthlyRecord = {
       month,
-      income:     totalIncome,
+      income: totalIncome,
       debtTotal,
       categories: budget.categories.map((c) => ({
-        name:        c.name,
-        icon:        c.icon,
-        color:       c.color,
+        name: c.name, icon: c.icon, color: c.color,
         budgetLimit: parseFloat(c.amount) || 0,
       })),
       transactions: txs,
@@ -122,321 +210,496 @@ async function archivePreviousMonths(budget: BudgetData): Promise<BudgetData> {
       },
     };
 
-    await saveMonthlyRecord(record);
+    await saveMonthlyRecord(record, userId);
   }
 
-  // Strip past transactions from the live budget
+  // Delete past transactions from Supabase, then strip from local state
+  await deleteTransactionsBefore(currentMonth, userId);
   const currentTxs = budget.transactions.filter((t) => t.date.slice(0, 7) >= currentMonth);
   return { ...budget, transactions: currentTxs };
 }
 
-// ─── Seed / default data shown before the user saves for the first time ───────
+// ─── Default data shown before the user saves for the first time ──────────────
 
 function uid(): string {
-  return Math.random().toString(36).slice(2, 9);
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
 }
 
 const DEFAULT_BUDGET: BudgetData = {
-  incomeSources: [
-    { id: uid(), name: 'Main Job', type: 'income', amount: '4200' },
-  ],
-  debts: [
-    { id: uid(), name: 'Student Loan', amount: '320' },
-    { id: uid(), name: 'Car Payment',  amount: '450' },
-  ],
-  categories: [
-    { id: uid(), amount: '1400', ...findPreset('Rent/Mortgage')!  },
-    { id: uid(), amount: '350',  ...findPreset('Groceries')!      },
-    { id: uid(), amount: '120',  ...findPreset('Utilities')!      },
-    { id: uid(), amount: '80',   ...findPreset('Entertainment')!  },
-  ],
-  transactions: [],
-  lastSaved: null,
-  lastArchivedMonth: null,
+  incomeSources:            [],
+  debts:                    [],
+  categories:               [],
+  transactions:             [],
+  lastSaved:                null,
+  lastArchivedMonth:        null,
+  savingsGoals:             [],
+  savingsPool:              0,
+  lastSurplusPromptPeriod:  null,
 };
 
 // ─── Context shape ────────────────────────────────────────────────────────────
 
 interface BudgetContextValue {
-  /** The current in-memory budget. Always populated (falls back to defaults). */
-  budget: BudgetData;
-
-  /** True while the initial AsyncStorage load is in progress. */
+  budget:    BudgetData;
   isLoading: boolean;
 
-  /**
-   * Persist a new budget to AsyncStorage and update the in-memory state.
-   * Returns the saved data (with lastSaved stamped) on success.
-   * Throws on failure so the caller can show an error message.
-   */
   saveBudget: (data: {
     incomeSources: IncomeSource[];
-    debts: DebtItem[];
-    categories: CategoryItem[];
+    debts:         DebtItem[];
+    categories:    CategoryItem[];
   }) => Promise<BudgetData>;
 
-  /**
-   * Append a transaction, auto-save silently to AsyncStorage.
-   * Does NOT update lastSaved — that timestamp is reserved for setup saves.
-   */
-  addTransaction: (tx: Omit<Transaction, 'id'>) => Promise<void>;
+  addTransaction:    (tx: Omit<Transaction, 'id'>)                          => Promise<void>;
+  editTransaction:   (id: string, updates: Omit<Transaction, 'id'>)         => Promise<void>;
+  deleteTransaction: (id: string)                                            => Promise<void>;
+  applyAdjustments:  (adj: { categoryName: string; newAmount: number }[])   => Promise<void>;
+  updateDebtBalance: (debtId: string, newBalance: string)                   => Promise<void>;
 
-  /** Update an existing transaction by id. Auto-saves silently. */
-  editTransaction: (id: string, updates: Omit<Transaction, 'id'>) => Promise<void>;
-
-  /** Remove a transaction by id. Auto-saves silently. */
-  deleteTransaction: (id: string) => Promise<void>;
-
-  /**
-   * Apply AI-suggested category budget changes.
-   * Each entry maps a category name to a new monthly limit.
-   * Auto-saves silently — same behaviour as transaction mutations.
-   */
-  applyAdjustments: (
-    adjustments: { categoryName: string; newAmount: number }[],
-  ) => Promise<void>;
-
-  /**
-   * Update a debt's currentBalance (e.g. after a payment is logged).
-   * Auto-saves silently. Pass '0' when fully paid off.
-   */
-  updateDebtBalance: (debtId: string, newBalance: string) => Promise<void>;
-
-  /**
-   * True when the app detects the calendar month has changed and the user
-   * has not yet confirmed moving into the new month.
-   * Drives the month-end prompt on the Dashboard.
-   */
   monthEndPending: boolean;
-
-  /**
-   * User confirmed they are ready to start the new month.
-   * Archives previous-month transactions into a MonthlyRecord, removes them
-   * from the live budget, and clears the pending flag.
-   */
   confirmMonthEnd: () => Promise<void>;
-
-  /**
-   * Dev utility: resets lastArchivedMonth to the previous month so the
-   * month-end prompt appears on the Dashboard, simulating a real rollover.
-   */
   simulateMonthEnd: () => Promise<void>;
+
+  // ─── Goals & Potential Savings ──────────────────────────────────────────
+  /** True when a new bi-weekly period just started and there's surplus to allocate */
+  biweeklyEndPending: boolean;
+  /** The surplus amount from the period that just ended */
+  pendingSurplus: number;
+  addGoal:        (goal: Omit<SavingsGoal, 'id' | 'currentAmount' | 'createdAt' | 'completedAt'>) => Promise<void>;
+  deleteGoal:     (id: string)                                                                      => Promise<void>;
+  /** Move `amount` from the Potential Savings pool into a specific goal */
+  contributeToGoal: (goalId: string, amount: number) => Promise<SavingsGoal | null>;
+  /** Move the full pending surplus (or a custom amount) into the pool */
+  claimSurplusToPool: (amount: number) => Promise<void>;
+  /** Dismiss the bi-weekly end prompt without allocating */
+  dismissBiweeklyPrompt: () => Promise<void>;
 }
 
 // ─── Context + hook ───────────────────────────────────────────────────────────
 
 const BudgetContext = createContext<BudgetContextValue | null>(null);
 
-/** Access budget data and actions from any screen. */
 export function useBudget(): BudgetContextValue {
   const ctx = useContext(BudgetContext);
-  if (!ctx) {
-    throw new Error('useBudget must be used inside <BudgetProvider>');
-  }
+  if (!ctx) throw new Error('useBudget must be used inside <BudgetProvider>');
   return ctx;
 }
 
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 export function BudgetProvider({ children }: { children: ReactNode }) {
-  const [budget,          setBudget]          = useState<BudgetData>(DEFAULT_BUDGET);
-  const [isLoading,       setIsLoading]       = useState(true);
-  const [monthEndPending, setMonthEndPending] = useState(false);
+  const { user } = useAuth();
 
-  // Always-current snapshot for use inside async callbacks without stale closures
+  const [budget,               setBudget]               = useState<BudgetData>(DEFAULT_BUDGET);
+  const [isLoading,            setIsLoading]            = useState(true);
+  const [monthEndPending,      setMonthEndPending]      = useState(false);
+  const [biweeklyEndPending,   setBiweeklyEndPending]   = useState(false);
+  const [pendingSurplus,       setPendingSurplus]       = useState(0);
+
+  // Refs for use inside async callbacks — avoids stale closures
   const budgetRef = useRef<BudgetData>(DEFAULT_BUDGET);
-  useEffect(() => { budgetRef.current = budget; }, [budget]);
+  const userIdRef = useRef<string | null>(null);
+  useEffect(() => { budgetRef.current = budget; },      [budget]);
+  useEffect(() => { userIdRef.current = user?.id ?? null; }, [user]);
 
-  // Load persisted data on mount and detect month rollovers
+  // ── Load (or reset) when the auth user changes ────────────────────────────
   useEffect(() => {
-    loadBudget()
-      .then(async (saved) => {
+    if (!user) {
+      // Logged out — reset to defaults so no stale data leaks between accounts
+      setBudget(DEFAULT_BUDGET);
+      budgetRef.current = DEFAULT_BUDGET;
+      setMonthEndPending(false);
+      setIsLoading(false);
+      return;
+    }
+
+    setIsLoading(true);
+
+    Promise.all([loadBudget(user.id), loadTransactions(user.id)])
+      .then(async ([saved, transactions]) => {
         const currentMonth = currentMonthKey();
 
         if (saved) {
           const merged: BudgetData = {
             ...DEFAULT_BUDGET,
             ...saved,
-            transactions:      saved.transactions      ?? [],
-            lastArchivedMonth: saved.lastArchivedMonth ?? null,
+            transactions,
           };
 
           if (!merged.lastArchivedMonth) {
-            // First launch — silently initialise, nothing to archive yet
-            const initialised = { ...merged, lastArchivedMonth: currentMonth };
+            // First launch for this user — initialise silently, nothing to archive
+            const initialised = {
+              ...merged,
+              lastArchivedMonth:       currentMonth,
+              lastSurplusPromptPeriod: currentBiweeklyKey(),
+            };
             setBudget(initialised);
-            writeRaw(initialised).catch((err) =>
+            writeRaw(setupOnly(initialised), user.id).catch((err) =>
               console.warn('[BudgetContext] Init lastArchivedMonth failed:', err),
             );
           } else if (merged.lastArchivedMonth !== currentMonth) {
-            // The month has rolled over — surface the prompt to the user
+            // Month has rolled over — show the prompt
             setBudget(merged);
             setMonthEndPending(true);
           } else {
-            // Same month as last confirmed — nothing to do
             setBudget(merged);
+
+            // Check if a new bi-weekly period started since we last prompted
+            const curKey  = currentBiweeklyKey();
+            const lastKey = merged.lastSurplusPromptPeriod;
+            if (lastKey !== curKey) {
+              const prevKey = prevBiweeklyKey(curKey);
+              // Only prompt if the previous period is within the current calendar month
+              // (archived periods aren't in local transactions)
+              if (prevKey.slice(0, 7) === currentMonth) {
+                const surplus = calcBiweeklySurplus(merged, prevKey);
+                if (surplus > 0) {
+                  setBiweeklyEndPending(true);
+                  setPendingSurplus(surplus);
+                } else {
+                  // No surplus — silently advance the prompt key
+                  const advanced = { ...merged, lastSurplusPromptPeriod: curKey };
+                  setBudget(advanced);
+                  writeRaw(setupOnly(advanced), user.id).catch(console.error);
+                }
+              }
+            }
           }
+        } else {
+          // New user — no Supabase row yet, start from defaults
+          const initialised = { ...DEFAULT_BUDGET, transactions: [], lastArchivedMonth: currentMonth };
+          setBudget(initialised);
         }
       })
       .catch((err) => {
         console.warn('[BudgetContext] Failed to load budget:', err);
       })
       .finally(() => setIsLoading(false));
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
-  // ── Setup save (stamps lastSaved) ────────────────────────────────────────────
+  // ── Setup save (stamps lastSaved) ─────────────────────────────────────────
   const saveBudget = useCallback(async (data: {
     incomeSources: IncomeSource[];
-    debts: DebtItem[];
-    categories: CategoryItem[];
+    debts:         DebtItem[];
+    categories:    CategoryItem[];
   }): Promise<BudgetData> => {
-    // Keep existing transactions and month tracking when saving setup changes
+    const userId = userIdRef.current;
+    if (!userId) throw new Error('Not signed in');
+
     const payload = {
       ...data,
-      transactions:      budget.transactions,
-      lastArchivedMonth: budget.lastArchivedMonth,
+      lastArchivedMonth: budgetRef.current.lastArchivedMonth,
     };
-    await persistBudget(payload);
-    const updated: BudgetData = { ...payload, lastSaved: new Date().toISOString() };
+    await persistBudget(payload, userId);
+    const updated: BudgetData = {
+      ...payload,
+      transactions: budgetRef.current.transactions,
+      lastSaved:    new Date().toISOString(),
+    };
     setBudget(updated);
     return updated;
-  }, [budget.transactions, budget.lastArchivedMonth]);
-
-  // ── Transaction auto-save (does NOT stamp lastSaved) ─────────────────────────
-  const addTransaction = useCallback(async (tx: Omit<Transaction, 'id'>): Promise<void> => {
-    const newTx: Transaction = { ...tx, id: uid() };
-    // Use functional update so we always work with the latest state
-    setBudget((prev) => {
-      const updated: BudgetData = {
-        ...prev,
-        transactions: [...prev.transactions, newTx],
-      };
-      // Fire-and-forget persist — errors are logged, not surfaced to the user
-      writeRaw(updated).catch((err) =>
-        console.error('[BudgetContext] Transaction auto-save failed:', err),
-      );
-      return updated;
-    });
   }, []);
 
-  // ── Edit an existing transaction ─────────────────────────────────────────────
+  // ── Add transaction ───────────────────────────────────────────────────────
+  const addTransaction = useCallback(async (tx: Omit<Transaction, 'id'>): Promise<void> => {
+    const userId = userIdRef.current;
+    if (!userId) return;
+
+    const newTx: Transaction = { ...tx, id: uid() };
+
+    // Update local state immediately (optimistic)
+    setBudget((prev) => ({ ...prev, transactions: [...prev.transactions, newTx] }));
+
+    // Persist to Supabase
+    insertTransaction(newTx, userId).catch((err) =>
+      console.error('[BudgetContext] insertTransaction failed:', err),
+    );
+  }, []);
+
+  // ── Edit transaction ──────────────────────────────────────────────────────
   const editTransaction = useCallback(
     async (id: string, updates: Omit<Transaction, 'id'>): Promise<void> => {
-      setBudget((prev) => {
-        const updated: BudgetData = {
-          ...prev,
-          transactions: prev.transactions.map((t) =>
-            t.id === id ? { ...updates, id } : t,
-          ),
-        };
-        writeRaw(updated).catch((err) =>
-          console.error('[BudgetContext] Edit auto-save failed:', err),
-        );
-        return updated;
-      });
+      const userId = userIdRef.current;
+      if (!userId) return;
+
+      const updated: Transaction = { ...updates, id };
+
+      setBudget((prev) => ({
+        ...prev,
+        transactions: prev.transactions.map((t) => t.id === id ? updated : t),
+      }));
+
+      updateTransaction(updated, userId).catch((err) =>
+        console.error('[BudgetContext] updateTransaction failed:', err),
+      );
     },
     [],
   );
 
-  // ── Delete a transaction ──────────────────────────────────────────────────────
+  // ── Delete transaction ────────────────────────────────────────────────────
   const deleteTransaction = useCallback(async (id: string): Promise<void> => {
+    const userId = userIdRef.current;
+    if (!userId) return;
+
     setBudget((prev) => {
       const tx = prev.transactions.find((t) => t.id === id);
 
-      // If this transaction was a debt payment, restore the amount to currentBalance
-      const matchingDebt = tx
-        ? prev.debts.find((d) => d.name === tx.categoryName)
-        : undefined;
-      const updatedDebts =
-        matchingDebt && matchingDebt.currentBalance !== undefined
-          ? prev.debts.map((d) =>
-              d.id === matchingDebt.id
-                ? { ...d, currentBalance: (parseFloat(d.currentBalance!) + tx!.amount).toString() }
-                : d,
-            )
-          : prev.debts;
+      // Restore debt balance if this was a debt payment
+      const matchingDebt = tx ? prev.debts.find((d) => d.name === tx.categoryName) : undefined;
+      const updatedDebts = matchingDebt && matchingDebt.currentBalance !== undefined
+        ? prev.debts.map((d) =>
+            d.id === matchingDebt.id
+              ? { ...d, currentBalance: (parseFloat(d.currentBalance!) + tx!.amount).toString() }
+              : d,
+          )
+        : prev.debts;
 
-      const updated: BudgetData = {
+      const next: BudgetData = {
         ...prev,
-        debts: updatedDebts,
+        debts:        updatedDebts,
         transactions: prev.transactions.filter((t) => t.id !== id),
       };
-      writeRaw(updated).catch((err) =>
-        console.error('[BudgetContext] Delete auto-save failed:', err),
-      );
-      return updated;
+
+      // If debts changed, persist the setup update too
+      if (updatedDebts !== prev.debts) {
+        writeRaw(setupOnly(next), userId).catch((err) =>
+          console.error('[BudgetContext] Debt restore write failed:', err),
+        );
+      }
+
+      return next;
     });
+
+    deleteTransactionById(id, userId).catch((err) =>
+      console.error('[BudgetContext] deleteTransaction failed:', err),
+    );
   }, []);
 
-  // ── Apply AI-suggested category budget adjustments ────────────────────────────
+  // ── Apply AI-suggested adjustments ───────────────────────────────────────
   const applyAdjustments = useCallback(
     async (adjustments: { categoryName: string; newAmount: number }[]): Promise<void> => {
+      const userId = userIdRef.current;
+      if (!userId) return;
+
       setBudget((prev) => {
-        const updated: BudgetData = {
+        const next: BudgetData = {
           ...prev,
           categories: prev.categories.map((cat) => {
             const adj = adjustments.find((a) => a.categoryName === cat.name);
             return adj ? { ...cat, amount: adj.newAmount.toString() } : cat;
           }),
         };
-        writeRaw(updated).catch((err) =>
-          console.error('[BudgetContext] applyAdjustments auto-save failed:', err),
+        writeRaw(setupOnly(next), userId).catch((err) =>
+          console.error('[BudgetContext] applyAdjustments write failed:', err),
         );
-        return updated;
+        return next;
       });
     },
     [],
   );
 
-  // ── Confirm month-end: archive previous month then clear pending flag ─────────
+  // ── Update a debt's current balance ──────────────────────────────────────
+  const updateDebtBalance = useCallback(
+    async (debtId: string, newBalance: string): Promise<void> => {
+      const userId = userIdRef.current;
+      if (!userId) return;
+
+      setBudget((prev) => {
+        const next: BudgetData = {
+          ...prev,
+          debts: prev.debts.map((d) =>
+            d.id === debtId ? { ...d, currentBalance: newBalance } : d,
+          ),
+        };
+        writeRaw(setupOnly(next), userId).catch((err) =>
+          console.error('[BudgetContext] updateDebtBalance write failed:', err),
+        );
+        return next;
+      });
+    },
+    [],
+  );
+
+  // ── Confirm month-end ─────────────────────────────────────────────────────
   const confirmMonthEnd = useCallback(async (): Promise<void> => {
+    const userId = userIdRef.current;
+    if (!userId) return;
+
     const currentMonth = currentMonthKey();
     setMonthEndPending(false);
+
     try {
-      const cleaned = await archivePreviousMonths(budgetRef.current);
+      const cleaned = await archivePreviousMonths(budgetRef.current, userId);
       const updated: BudgetData = { ...cleaned, lastArchivedMonth: currentMonth };
       setBudget(updated);
-      writeRaw(updated).catch((err) =>
-        console.error('[BudgetContext] Post-confirm persist failed:', err),
+      writeRaw(setupOnly(updated), userId).catch((err) =>
+        console.error('[BudgetContext] Post-confirm write failed:', err),
       );
     } catch (err) {
-      console.error('[BudgetContext] confirmMonthEnd archive failed:', err);
+      console.error('[BudgetContext] confirmMonthEnd failed:', err);
       // At minimum update lastArchivedMonth so the prompt doesn't loop
       setBudget((prev) => {
         const fallback = { ...prev, lastArchivedMonth: currentMonth };
-        writeRaw(fallback).catch(console.error);
+        writeRaw(setupOnly(fallback), userId).catch(console.error);
         return fallback;
       });
     }
   }, []);
 
-  // ── Simulate month-end: build a real report from current data, then prompt ────
-  const simulateMonthEnd = useCallback(async (): Promise<void> => {
-    const current    = budgetRef.current;
-    const thisMonth  = currentMonthKey();
+  // ── Goals & Potential Savings ─────────────────────────────────────────────
 
-    // Build a MonthlyRecord from current-month transactions so the Reports
-    // screen actually has data to display after the user confirms.
+  const addGoal = useCallback(
+    async (goal: Omit<SavingsGoal, 'id' | 'currentAmount' | 'createdAt' | 'completedAt'>): Promise<void> => {
+      const userId = userIdRef.current;
+      if (!userId) return;
+
+      const newGoal: SavingsGoal = {
+        ...goal,
+        id:            uid(),
+        currentAmount: 0,
+        createdAt:     new Date().toISOString(),
+      };
+
+      setBudget((prev) => {
+        const next: BudgetData = { ...prev, savingsGoals: [...prev.savingsGoals, newGoal] };
+        writeRaw(setupOnly(next), userId).catch((err) =>
+          console.error('[BudgetContext] addGoal write failed:', err),
+        );
+        return next;
+      });
+    },
+    [],
+  );
+
+  const deleteGoal = useCallback(async (id: string): Promise<void> => {
+    const userId = userIdRef.current;
+    if (!userId) return;
+
+    setBudget((prev) => {
+      const goal = prev.savingsGoals.find((g) => g.id === id);
+      // Return any saved amount back to the pool
+      const refund = goal?.currentAmount ?? 0;
+      const next: BudgetData = {
+        ...prev,
+        savingsGoals: prev.savingsGoals.filter((g) => g.id !== id),
+        savingsPool:  prev.savingsPool + refund,
+      };
+      writeRaw(setupOnly(next), userId).catch((err) =>
+        console.error('[BudgetContext] deleteGoal write failed:', err),
+      );
+      return next;
+    });
+  }, []);
+
+  /**
+   * Move `amount` from the Potential Savings pool into a goal.
+   * Returns the updated goal (including completedAt if it was just finished).
+   * Returns null if the goal is not found or pool is insufficient.
+   */
+  const contributeToGoal = useCallback(
+    async (goalId: string, amount: number): Promise<SavingsGoal | null> => {
+      const userId = userIdRef.current;
+      if (!userId || amount <= 0) return null;
+
+      let resultGoal: SavingsGoal | null = null;
+
+      setBudget((prev) => {
+        const goal = prev.savingsGoals.find((g) => g.id === goalId);
+        if (!goal) return prev;
+
+        const clampedAmount = Math.min(amount, prev.savingsPool);
+        if (clampedAmount <= 0) return prev;
+
+        const newCurrent   = goal.currentAmount + clampedAmount;
+        const isComplete   = goal.targetAmount > 0 && newCurrent >= goal.targetAmount;
+        const updatedGoal: SavingsGoal = {
+          ...goal,
+          currentAmount: newCurrent,
+          ...(isComplete && !goal.completedAt ? { completedAt: new Date().toISOString() } : {}),
+        };
+
+        resultGoal = updatedGoal;
+
+        const next: BudgetData = {
+          ...prev,
+          savingsPool:  prev.savingsPool - clampedAmount,
+          savingsGoals: prev.savingsGoals.map((g) => g.id === goalId ? updatedGoal : g),
+        };
+        writeRaw(setupOnly(next), userId).catch((err) =>
+          console.error('[BudgetContext] contributeToGoal write failed:', err),
+        );
+        return next;
+      });
+
+      return resultGoal;
+    },
+    [],
+  );
+
+  /** Add `amount` to the Potential Savings pool (called from bi-weekly end prompt). */
+  const claimSurplusToPool = useCallback(async (amount: number): Promise<void> => {
+    const userId = userIdRef.current;
+    if (!userId || amount <= 0) return;
+
+    const curKey = currentBiweeklyKey();
+
+    setBudget((prev) => {
+      const next: BudgetData = {
+        ...prev,
+        savingsPool:             prev.savingsPool + amount,
+        lastSurplusPromptPeriod: curKey,
+      };
+      writeRaw(setupOnly(next), userId).catch((err) =>
+        console.error('[BudgetContext] claimSurplusToPool write failed:', err),
+      );
+      return next;
+    });
+
+    setBiweeklyEndPending(false);
+    setPendingSurplus(0);
+  }, []);
+
+  /** Dismiss the bi-weekly prompt without adding anything to the pool. */
+  const dismissBiweeklyPrompt = useCallback(async (): Promise<void> => {
+    const userId = userIdRef.current;
+    if (!userId) return;
+
+    const curKey = currentBiweeklyKey();
+    setBiweeklyEndPending(false);
+    setPendingSurplus(0);
+
+    setBudget((prev) => {
+      const next: BudgetData = { ...prev, lastSurplusPromptPeriod: curKey };
+      writeRaw(setupOnly(next), userId).catch((err) =>
+        console.error('[BudgetContext] dismissBiweeklyPrompt write failed:', err),
+      );
+      return next;
+    });
+  }, []);
+
+  // ── Simulate month-end (dev tool) ─────────────────────────────────────────
+  const simulateMonthEnd = useCallback(async (): Promise<void> => {
+    const userId  = userIdRef.current;
+    const current = budgetRef.current;
+    if (!userId) return;
+
+    const thisMonth     = currentMonthKey();
     const totalIncome   = current.incomeSources.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
     const debtTotal     = current.debts.reduce((s, d) => s + (parseFloat(d.amount) || 0), 0);
     const totalBudgeted = current.categories.reduce((s, c) => s + (parseFloat(c.amount) || 0), 0);
-
-    const currentTxs = current.transactions.filter((t) => t.date.startsWith(thisMonth));
+    const currentTxs    = current.transactions.filter((t) => t.date.startsWith(thisMonth));
 
     const categoryBreakdown = current.categories.map((cat) => ({
-      name:  cat.name,
-      icon:  cat.icon,
-      color: cat.color,
-      spent: currentTxs
-        .filter((t) => t.categoryName === cat.name)
-        .reduce((s, t) => s + t.amount, 0),
+      name:  cat.name, icon: cat.icon, color: cat.color,
+      spent: currentTxs.filter((t) => t.categoryName === cat.name).reduce((s, t) => s + t.amount, 0),
       limit: parseFloat(cat.amount) || 0,
     }));
 
     const knownNames = new Set(current.categories.map((c) => c.name));
-    const otherSpent = currentTxs
-      .filter((t) => !knownNames.has(t.categoryName))
-      .reduce((s, t) => s + t.amount, 0);
+    const otherSpent = currentTxs.filter((t) => !knownNames.has(t.categoryName)).reduce((s, t) => s + t.amount, 0);
     if (otherSpent > 0) {
       categoryBreakdown.push({ name: 'Other/Misc', icon: '📦', color: '#94A3B8', spent: otherSpent, limit: 0 });
     }
@@ -444,16 +707,15 @@ export function BudgetProvider({ children }: { children: ReactNode }) {
     const totalSpent = currentTxs.reduce((s, t) => s + t.amount, 0);
 
     const record: MonthlyRecord = {
-      month:        thisMonth,
-      income:       totalIncome,
+      month:      thisMonth,
+      income:     totalIncome,
       debtTotal,
-      categories:   current.categories.map((c) => ({
+      categories: current.categories.map((c) => ({
         name: c.name, icon: c.icon, color: c.color, budgetLimit: parseFloat(c.amount) || 0,
       })),
       transactions: currentTxs,
       summary: {
-        totalSpent,
-        totalBudgeted,
+        totalSpent, totalBudgeted,
         savingsRate: totalIncome > 0
           ? Math.max(0, Math.min(1, (totalIncome - totalSpent) / totalIncome))
           : 0,
@@ -461,37 +723,19 @@ export function BudgetProvider({ children }: { children: ReactNode }) {
       },
     };
 
-    // Save the report now (overwrite if already exists — this is a dev tool)
-    await saveMonthlyRecord(record).catch((err) =>
-      console.error('[BudgetContext] Simulate report save failed:', err),
+    await saveMonthlyRecord(record, userId).catch((err) =>
+      console.error('[BudgetContext] Simulate save failed:', err),
     );
 
-    // Rewind lastArchivedMonth so the month-end prompt appears on the Dashboard
     const prev = prevMonthKey(thisMonth);
     setBudget((b) => {
       const updated = { ...b, lastArchivedMonth: prev };
-      writeRaw(updated).catch((err) =>
-        console.error('[BudgetContext] Simulate persist failed:', err),
+      writeRaw(setupOnly(updated), userId).catch((err) =>
+        console.error('[BudgetContext] Simulate write failed:', err),
       );
       return updated;
     });
     setMonthEndPending(true);
-  }, []);
-
-  // ── Update a debt's current balance after a payment ──────────────────────────
-  const updateDebtBalance = useCallback(async (debtId: string, newBalance: string): Promise<void> => {
-    setBudget((prev) => {
-      const updated: BudgetData = {
-        ...prev,
-        debts: prev.debts.map((d) =>
-          d.id === debtId ? { ...d, currentBalance: newBalance } : d,
-        ),
-      };
-      writeRaw(updated).catch((err) =>
-        console.error('[BudgetContext] updateDebtBalance auto-save failed:', err),
-      );
-      return updated;
-    });
   }, []);
 
   return (
@@ -500,6 +744,8 @@ export function BudgetProvider({ children }: { children: ReactNode }) {
       saveBudget, addTransaction, editTransaction, deleteTransaction,
       applyAdjustments, updateDebtBalance,
       monthEndPending, confirmMonthEnd, simulateMonthEnd,
+      biweeklyEndPending, pendingSurplus,
+      addGoal, deleteGoal, contributeToGoal, claimSurplusToPool, dismissBiweeklyPrompt,
     }}>
       {children}
     </BudgetContext.Provider>

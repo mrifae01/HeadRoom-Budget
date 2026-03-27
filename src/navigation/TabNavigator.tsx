@@ -14,10 +14,12 @@ import SetupScreen     from '../screens/SetupScreen';
 import DashboardScreen from '../screens/DashboardScreen';
 import AIAdvisorScreen from '../screens/AIAdvisorScreen';
 import SettingsScreen  from '../screens/SettingsScreen';
+import GoalsScreen     from '../screens/GoalsScreen';
 
 const ICONS: Record<string, string> = {
   Setup:       '⚙',
   Dashboard:   '◉',
+  Goals:       '🎯',
   'AI Advisor':'✦',
   Settings:    '☰',
 };
@@ -61,6 +63,7 @@ export default function TabNavigator() {
     >
       <Tab.Screen name="Setup"      component={SetupScreen}     />
       <Tab.Screen name="Dashboard"  component={DashboardScreen} />
+      <Tab.Screen name="Goals"      component={GoalsScreen}     />
       <Tab.Screen
         name="AI Advisor"
         component={AIAdvisorScreen}
