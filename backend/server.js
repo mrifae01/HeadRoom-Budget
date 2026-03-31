@@ -13,6 +13,39 @@ require('dotenv').config();
 const express   = require('express');
 const cors      = require('cors');
 const Anthropic = require('@anthropic-ai/sdk/index.js');
+const { createClient } = require('@supabase/supabase-js');
+
+// ─── Supabase admin client (service role — never exposed to frontend) ──────────
+
+const supabaseAdmin = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY,
+);
+
+// ─── Teller helpers ────────────────────────────────────────────────────────────
+
+function tellerAuth(accessToken) {
+  return 'Basic ' + Buffer.from(accessToken + ':').toString('base64');
+}
+
+async function tellerFetch(path, accessToken) {
+  const res = await fetch(`https://api.teller.io${path}`, {
+    headers: { Authorization: tellerAuth(accessToken) },
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`Teller ${path} → ${res.status}: ${body}`);
+  }
+  return res.json();
+}
+
+async function getUserId(req) {
+  const auth = req.headers.authorization;
+  if (!auth?.startsWith('Bearer ')) return null;
+  const { data: { user }, error } = await supabaseAdmin.auth.getUser(auth.slice(7));
+  if (error || !user) return null;
+  return user.id;
+}
 
 // ─── Setup ────────────────────────────────────────────────────────────────────
 
@@ -208,6 +241,147 @@ app.post('/api/chat', async (req, res) => {
       ? 'Invalid API key — check your ANTHROPIC_API_KEY in .env'
       : 'Something went wrong on the AI server. Please try again.';
     res.status(status).json({ error: message });
+  }
+});
+
+// ─── Teller routes ────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/teller/enroll
+ * Body: { accessToken, institutionName, enrollmentId }
+ * Verifies the token against Teller, then upserts enrollment into Supabase.
+ */
+app.post('/api/teller/enroll', async (req, res) => {
+  try {
+    const userId = await getUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { accessToken, institutionName, enrollmentId } = req.body;
+    if (!accessToken || !institutionName || !enrollmentId) {
+      return res.status(400).json({ error: 'accessToken, institutionName and enrollmentId are required' });
+    }
+
+    // Verify the token actually works before storing it
+    await tellerFetch('/accounts', accessToken);
+
+    const { error } = await supabaseAdmin
+      .from('teller_enrollments')
+      .upsert(
+        {
+          user_id:          userId,
+          access_token:     accessToken,
+          institution_name: institutionName,
+          enrollment_id:    enrollmentId,
+        },
+        { onConflict: 'user_id' },
+      );
+
+    if (error) throw error;
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[POST /api/teller/enroll]', err?.message);
+    res.status(500).json({ error: err?.message ?? 'Enrollment failed' });
+  }
+});
+
+/**
+ * GET /api/teller/accounts
+ * Returns connected accounts or { accounts: [], connected: false }.
+ */
+app.get('/api/teller/accounts', async (req, res) => {
+  try {
+    const userId = await getUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { data: enrollment, error } = await supabaseAdmin
+      .from('teller_enrollments')
+      .select('access_token, institution_name')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    if (!enrollment) {
+      return res.json({ accounts: [], connected: false });
+    }
+
+    const accounts = await tellerFetch('/accounts', enrollment.access_token);
+
+    res.json({
+      accounts,
+      institutionName: enrollment.institution_name,
+      connected: true,
+    });
+  } catch (err) {
+    console.error('[GET /api/teller/accounts]', err?.message);
+    res.status(500).json({ error: err?.message ?? 'Failed to fetch accounts' });
+  }
+});
+
+/**
+ * GET /api/teller/transactions
+ * Fetches transactions for all connected accounts, merges, sorts, returns first 90.
+ */
+app.get('/api/teller/transactions', async (req, res) => {
+  try {
+    const userId = await getUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { data: enrollment, error } = await supabaseAdmin
+      .from('teller_enrollments')
+      .select('access_token')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!enrollment) return res.json({ transactions: [] });
+
+    const accounts = await tellerFetch('/accounts', enrollment.access_token);
+
+    const txArrays = await Promise.all(
+      accounts.map(async (account) => {
+        const txs = await tellerFetch(`/accounts/${account.id}/transactions`, enrollment.access_token);
+        return txs.map((tx) => ({
+          ...tx,
+          accountName: account.name,
+          accountType: account.type,
+        }));
+      }),
+    );
+
+    const merged = txArrays
+      .flat()
+      .sort((a, b) => (a.date < b.date ? 1 : -1))
+      .slice(0, 90);
+
+    res.json({ transactions: merged });
+  } catch (err) {
+    console.error('[GET /api/teller/transactions]', err?.message);
+    res.status(500).json({ error: err?.message ?? 'Failed to fetch transactions' });
+  }
+});
+
+/**
+ * DELETE /api/teller/disconnect
+ * Removes the enrollment record for the authenticated user.
+ */
+app.delete('/api/teller/disconnect', async (req, res) => {
+  try {
+    const userId = await getUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { error } = await supabaseAdmin
+      .from('teller_enrollments')
+      .delete()
+      .eq('user_id', userId);
+
+    if (error) throw error;
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[DELETE /api/teller/disconnect]', err?.message);
+    res.status(500).json({ error: err?.message ?? 'Disconnect failed' });
   }
 });
 

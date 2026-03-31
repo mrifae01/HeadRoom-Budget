@@ -7,7 +7,7 @@
  *  • About       — version info
  */
 
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useState } from 'react';
 import {
   ScrollView,
   View,
@@ -18,10 +18,19 @@ import {
   SafeAreaView,
   StatusBar,
   Alert,
+  Platform,
+  Linking,
+  TextInput,
+  Modal,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth }  from '../context/AuthContext';
-import { typography, spacing, radius } from '../theme';
+import { typography, spacing, radius, shadows } from '../theme';
+
+// ─── Support links — update COFFEE_URL once your page is live ─────────────────
+const FEEDBACK_EMAIL = 'mrifae@gmail.com';
+const COFFEE_URL     = 'https://buymeacoffee.com/mrifae';
 
 // ─── Small presentational pieces ─────────────────────────────────────────────
 
@@ -143,6 +152,78 @@ function SettingGroup({ children }: { children: React.ReactNode }) {
   );
 }
 
+// ─── FeedbackModal ────────────────────────────────────────────────────────────
+
+function FeedbackModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  const { colors } = useTheme();
+  const [message, setMessage] = useState('');
+
+  const handleSend = useCallback(() => {
+    const body    = encodeURIComponent(message.trim());
+    const subject = encodeURIComponent('HeadRoom Feedback');
+    Linking.openURL(`mailto:${FEEDBACK_EMAIL}?subject=${subject}&body=${body}`);
+    setMessage('');
+    onClose();
+  }, [message, onClose]);
+
+  const handleClose = useCallback(() => {
+    setMessage('');
+    onClose();
+  }, [onClose]);
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={handleClose}>
+      <KeyboardAvoidingView
+        style={modal.overlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={[modal.sheet, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          {/* Header */}
+          <View style={modal.header}>
+            <Text style={[modal.title, { color: colors.textPrimary }]}>Send Feedback</Text>
+            <TouchableOpacity onPress={handleClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={[modal.closeBtn, { color: colors.textMuted }]}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={[modal.subtitle, { color: colors.textSecondary }]}>
+            What's on your mind? Bug reports, feature ideas, anything — I read every message.
+          </Text>
+
+          {/* Message input */}
+          <TextInput
+            style={[modal.input, { backgroundColor: colors.surfaceAlt, borderColor: colors.border, color: colors.textPrimary }]}
+            placeholder="Type your message here..."
+            placeholderTextColor={colors.textMuted}
+            value={message}
+            onChangeText={setMessage}
+            multiline
+            numberOfLines={5}
+            textAlignVertical="top"
+          />
+
+          {/* Actions */}
+          <View style={modal.actions}>
+            <TouchableOpacity
+              style={[modal.cancelBtn, { borderColor: colors.border }]}
+              onPress={handleClose}
+            >
+              <Text style={[modal.cancelText, { color: colors.textSecondary }]}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[modal.sendBtn, { backgroundColor: colors.primary }, !message.trim() && modal.sendBtnDisabled]}
+              onPress={handleSend}
+              disabled={!message.trim()}
+            >
+              <Text style={modal.sendText}>Send ✉️</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
 // ─── SettingsScreen ───────────────────────────────────────────────────────────
 
 export default function SettingsScreen() {
@@ -156,15 +237,21 @@ export default function SettingsScreen() {
     ? new Date(user.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
     : '—';
 
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+
   const handleSignOut = useCallback(() => {
-    Alert.alert(
-      'Sign Out',
-      'Are you sure you want to sign out?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Sign Out', style: 'destructive', onPress: signOut },
-      ],
-    );
+    if (Platform.OS === 'web') {
+      if (window.confirm('Are you sure you want to sign out?')) signOut();
+    } else {
+      Alert.alert(
+        'Sign Out',
+        'Are you sure you want to sign out?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Sign Out', style: 'destructive', onPress: signOut },
+        ],
+      );
+    }
   }, [signOut]);
 
   return (
@@ -243,10 +330,24 @@ export default function SettingsScreen() {
             label="Notifications"
             sublabel="Coming soon"
           />
+        </SettingGroup>
+
+        {/* ── SUPPORT ─────────────────────────────────────── */}
+        <SectionLabel label="Support" />
+        <SettingGroup>
           <SettingRow
-            icon="💱"
-            label="Currency"
-            sublabel="USD — Coming soon"
+            icon="✉️"
+            label="Send Feedback"
+            sublabel="Bug reports, ideas, anything"
+            onPress={() => setFeedbackOpen(true)}
+            showChevron
+          />
+          <SettingRow
+            icon="☕"
+            label="Buy Me a Coffee"
+            sublabel="Support the app"
+            onPress={() => Linking.openURL(COFFEE_URL)}
+            showChevron
           />
         </SettingGroup>
 
@@ -257,18 +358,6 @@ export default function SettingsScreen() {
             icon="📋"
             label="Version"
             sublabel="1.0.0"
-          />
-          <SettingRow
-            icon="🔒"
-            label="Privacy Policy"
-            showChevron
-            onPress={() => {/* future */}}
-          />
-          <SettingRow
-            icon="📄"
-            label="Terms of Service"
-            showChevron
-            onPress={() => {/* future */}}
           />
         </SettingGroup>
 
@@ -281,6 +370,7 @@ export default function SettingsScreen() {
 
         <View style={{ height: spacing[8] }} />
       </ScrollView>
+      <FeedbackModal visible={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
     </SafeAreaView>
   );
 }
@@ -384,5 +474,79 @@ const styles = StyleSheet.create({
     fontSize: 22,
     lineHeight: 24,
     marginLeft: spacing[2],
+  },
+});
+
+// ─── Feedback modal styles ─────────────────────────────────────────────────────
+
+const modal = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    borderWidth: 1,
+    padding: spacing[6],
+    paddingBottom: spacing[8],
+    ...shadows.lg,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing[2],
+  },
+  title: {
+    fontSize: typography.lg,
+    fontWeight: typography.bold,
+  },
+  closeBtn: {
+    fontSize: typography.base,
+    fontWeight: typography.semibold,
+  },
+  subtitle: {
+    fontSize: typography.sm,
+    lineHeight: typography.sm * 1.6,
+    marginBottom: spacing[4],
+  },
+  input: {
+    borderWidth: 1.5,
+    borderRadius: radius.md,
+    padding: spacing[4],
+    fontSize: typography.base,
+    minHeight: 120,
+    marginBottom: spacing[5],
+  },
+  actions: {
+    flexDirection: 'row',
+    gap: spacing[3],
+  },
+  cancelBtn: {
+    flex: 1,
+    borderWidth: 1.5,
+    borderRadius: radius.md,
+    paddingVertical: spacing[3],
+    alignItems: 'center',
+  },
+  cancelText: {
+    fontSize: typography.base,
+    fontWeight: typography.medium,
+  },
+  sendBtn: {
+    flex: 1,
+    borderRadius: radius.md,
+    paddingVertical: spacing[3],
+    alignItems: 'center',
+  },
+  sendBtnDisabled: {
+    opacity: 0.4,
+  },
+  sendText: {
+    fontSize: typography.base,
+    fontWeight: typography.bold,
+    color: '#fff',
   },
 });

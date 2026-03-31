@@ -11,19 +11,23 @@ import { NavigationContainer } from '@react-navigation/native';
 import { ThemeProvider }  from './src/context/ThemeContext';
 import { AuthProvider }   from './src/context/AuthContext';
 import { BudgetProvider } from './src/context/BudgetContext';
+import { BankProvider }   from './src/context/BankContext';
 import RootNavigator from './src/navigation/RootNavigator';
 
 export default function App() {
   return (
     // ThemeProvider outermost — every screen + navigator can call useTheme()
     // AuthProvider next   — RootNavigator reads session to decide which stack to show
-    // BudgetProvider last — all app screens can call useBudget()
+    // BudgetProvider      — all app screens can call useBudget()
+    // BankProvider last   — needs auth (session JWT) to call the backend
     <ThemeProvider>
       <AuthProvider>
         <BudgetProvider>
-          <NavigationContainer>
-            <RootNavigator />
-          </NavigationContainer>
+          <BankProvider>
+            <NavigationContainer>
+              <RootNavigator />
+            </NavigationContainer>
+          </BankProvider>
         </BudgetProvider>
       </AuthProvider>
     </ThemeProvider>

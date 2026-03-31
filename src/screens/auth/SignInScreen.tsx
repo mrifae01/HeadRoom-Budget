@@ -19,6 +19,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
+import { useIsDesktop } from '../../hooks/useIsDesktop';
 import { typography, spacing, radius, shadows } from '../../theme';
 import { AuthStackParamList } from '../../../src/navigation/AuthNavigator';
 
@@ -28,6 +29,7 @@ export default function SignInScreen() {
   const { colors }  = useTheme();
   const { signIn }  = useAuth();
   const navigation  = useNavigation<Nav>();
+  const isDesktop   = useIsDesktop();
 
   const [email,     setEmail]     = useState('');
   const [password,  setPassword]  = useState('');
@@ -71,7 +73,7 @@ export default function SignInScreen() {
           </View>
 
           {/* ── Card ── */}
-          <View style={[s.card, shadows.md]}>
+          <View style={[s.card, shadows.md, isDesktop && s.cardDesktop]}>
             <Text style={s.heading}>Welcome back</Text>
             <Text style={s.subheading}>Sign in to your account</Text>
 
@@ -187,6 +189,11 @@ const styles = (c: ReturnType<typeof useTheme>['colors']) => StyleSheet.create({
     padding: spacing[6],
     borderWidth: 1,
     borderColor: c.border,
+  },
+  cardDesktop: {
+    maxWidth: 440,
+    width: '100%' as any,
+    alignSelf: 'center',
   },
   heading:    { fontSize: typography.xl, fontWeight: typography.bold as any, color: c.textPrimary, marginBottom: spacing[1] },
   subheading: { fontSize: typography.sm, color: c.textSecondary, marginBottom: spacing[6] },

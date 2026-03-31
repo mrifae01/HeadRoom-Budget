@@ -616,7 +616,7 @@ const gcStyles = StyleSheet.create({
 function makeStyles(colors: ReturnType<typeof useTheme>['colors']) {
   return StyleSheet.create({
     root:        { flex: 1, backgroundColor: colors.background },
-    header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing[5], paddingBottom: spacing[3] },
+    header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing[5], paddingTop: spacing[6], paddingBottom: spacing[3] },
     headerTitle: { fontSize: typography['2xl'], fontWeight: typography.bold, color: colors.textPrimary },
     addBtn:      { backgroundColor: colors.primary, paddingHorizontal: spacing[4], paddingVertical: spacing[2], borderRadius: radius.full },
     addBtnText:  { color: '#fff', fontWeight: typography.semibold, fontSize: typography.sm },
