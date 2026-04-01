@@ -1,0 +1,35 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#4338CA"/>
+      <stop offset="100%" stop-color="#7C3AED"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="white" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="white" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background rounded square -->
+  <rect width="1024" height="1024" rx="224" fill="url(#bg)"/>
+
+  <!-- Subtle top-shine overlay -->
+  <rect width="1024" height="512" rx="224" fill="url(#shine)"/>
+
+  <!-- H — left bar -->
+  <rect x="236" y="228" width="112" height="568" rx="32" fill="white"/>
+
+  <!-- H — right bar -->
+  <rect x="676" y="228" width="112" height="568" rx="32" fill="white"/>
+
+  <!-- H — crossbar (raised slightly above center = "headroom" above it) -->
+  <rect x="236" y="444" width="552" height="96" rx="32" fill="white"/>
+
+  <!-- ✦ sparkle — 4-pointed star centered at (512, 158) -->
+  <!-- Outer radius 38, inner radius 14 -->
+  <path
+    d="M512 120 L527 144 L551 158 L527 172 L512 196 L497 172 L473 158 L497 144 Z"
+    fill="white"
+    opacity="0.75"
+  />
+</svg>

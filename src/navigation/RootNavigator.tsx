@@ -22,7 +22,7 @@ import MonthDetailScreen from '../screens/MonthDetailScreen';
 // ─── Param list ───────────────────────────────────────────────────────────────
 
 export type RootStackParamList = {
-  Main:        undefined;
+  HeadRoom:    undefined;
   Reports:     undefined;
   MonthDetail: { month: string };   // 'YYYY-MM'
 };
@@ -52,7 +52,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 function AppNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="Main"        component={TabNavigator}      />
+      <Stack.Screen name="HeadRoom"     component={TabNavigator}      />
       <Stack.Screen name="Reports"     component={ReportsScreen}     />
       <Stack.Screen name="MonthDetail" component={MonthDetailScreen} />
     </Stack.Navigator>

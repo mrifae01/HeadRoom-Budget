@@ -31,7 +31,9 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "name": "HeadRoom",
+      "title": "HeadRoom"
     },
     "plugins": [
       "expo-asset"
