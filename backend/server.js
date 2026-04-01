@@ -207,10 +207,29 @@ ${txLines}
 
 app.post('/api/chat', chatLimiter, async (req, res) => {
   try {
+    const userId = await getUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
     const { messages, budgetContext } = req.body;
 
-    if (!Array.isArray(messages) || !budgetContext) {
-      return res.status(400).json({ error: '`messages` array and `budgetContext` object are required.' });
+    if (!Array.isArray(messages) || messages.length === 0 || messages.length > 50) {
+      return res.status(400).json({ error: '`messages` must be a non-empty array with at most 50 items.' });
+    }
+
+    const validRoles = new Set(['user', 'assistant']);
+    for (const msg of messages) {
+      if (!validRoles.has(msg?.role) || typeof msg?.content !== 'string' || msg.content.length > 4000) {
+        return res.status(400).json({ error: 'Each message must have role "user" or "assistant" and content under 4000 characters.' });
+      }
+    }
+
+    if (!budgetContext || typeof budgetContext !== 'object' || Array.isArray(budgetContext)) {
+      return res.status(400).json({ error: '`budgetContext` must be an object.' });
+    }
+
+    const { incomeSources = [], categories = [], debts = [], transactions = [] } = budgetContext;
+    if (!Array.isArray(incomeSources) || !Array.isArray(categories) || !Array.isArray(debts) || !Array.isArray(transactions)) {
+      return res.status(400).json({ error: '`budgetContext` fields must be arrays.' });
     }
 
     const systemPrompt = buildSystemPrompt(budgetContext);

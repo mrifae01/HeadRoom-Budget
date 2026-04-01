@@ -31,6 +31,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useBudget } from '../context/BudgetContext';
 import ProgressBar from '../components/ProgressBar';
 import { API_BASE_URL } from '../config/api';
+import { supabase } from '../config/supabase';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -495,9 +496,15 @@ export default function AIAdvisorScreen() {
         transactions:  sortedTx.slice(0, 30), // most recent 30 only
       };
 
+      const { data: { session } } = await supabase.auth.getSession();
+      const jwt = session?.access_token ?? null;
+
       const response = await fetch(`${API_BASE_URL}/api/chat`, {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}),
+        },
         body:    JSON.stringify({ messages: claudeMessages, budgetContext }),
       });
 
