@@ -28,6 +28,7 @@ import { typography, spacing, radius, shadows } from '../theme';
 import { Colors } from '../theme';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth }  from '../context/AuthContext';
+import { useIsDesktop } from '../hooks/useIsDesktop';
 import { RootStackParamList } from '../navigation/RootNavigator';
 import { MonthlyRecord, Transaction } from '../types/budget';
 import { loadMonthlyRecord, formatMonthLabel } from '../storage/reports';
@@ -275,6 +276,15 @@ const createStyles = (c: Colors) => StyleSheet.create({
     paddingHorizontal: spacing[4],
     paddingBottom: spacing[8],
   },
+  contentDesktop: {
+    paddingHorizontal: spacing[8],
+    alignItems: 'center' as const,
+  },
+  desktopInner: {
+    maxWidth: 860,
+    width: '100%' as const,
+    alignSelf: 'center' as const,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -285,6 +295,9 @@ const createStyles = (c: Colors) => StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: c.border,
     backgroundColor: c.surface,
+  },
+  headerDesktop: {
+    paddingHorizontal: spacing[8],
   },
   backBtn: {
     width: 36, height: 36, borderRadius: 18,
@@ -399,6 +412,7 @@ export default function MonthDetailScreen() {
 
   const { colors, isDark } = useTheme();
   const { user } = useAuth();
+  const isDesktop = useIsDesktop();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const [record,    setRecord]    = useState<MonthlyRecord | null>(null);
@@ -477,22 +491,27 @@ export default function MonthDetailScreen() {
       />
 
       {/* ── Header ── */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => navigation.goBack()}
-          accessibilityLabel="Go back"
-        >
-          <Text style={styles.backText}>‹</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{formatMonthLabel(month)}</Text>
+      <View style={[styles.header, isDesktop && styles.headerDesktop]}>
+        <View style={isDesktop ? styles.desktopInner : undefined}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing[3] }}>
+            <TouchableOpacity
+              style={styles.backBtn}
+              onPress={() => navigation.goBack()}
+              accessibilityLabel="Go back"
+            >
+              <Text style={styles.backText}>‹</Text>
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>{formatMonthLabel(month)}</Text>
+          </View>
+        </View>
       </View>
 
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, isDesktop && styles.contentDesktop]}
         showsVerticalScrollIndicator={false}
       >
+        <View style={isDesktop ? styles.desktopInner : undefined}>
 
         {/* ── 1. Hero summary card ── */}
         <SectionLabel title="Overview" colors={colors} />
@@ -637,6 +656,7 @@ export default function MonthDetailScreen() {
           </View>
         )}
 
+        </View>
       </ScrollView>
     </SafeAreaView>
   );

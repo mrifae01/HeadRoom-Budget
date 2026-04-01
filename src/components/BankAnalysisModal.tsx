@@ -18,6 +18,7 @@ import {
   Platform,
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
+import { useIsDesktop } from '../hooks/useIsDesktop';
 import { useBudget } from '../context/BudgetContext';
 import { supabase } from '../config/supabase';
 import { API_BASE_URL } from '../config/api';
@@ -72,6 +73,7 @@ type Step = 'prompt' | 'loading' | 'result' | 'error';
 export default function BankAnalysisModal({ visible, onClose }: Props) {
   const { colors }     = useTheme();
   const { saveBudget } = useBudget();
+  const isDesktop      = useIsDesktop();
 
   const [step,   setStep]   = useState<Step>('prompt');
   const [result, setResult] = useState<AnalysisResult | null>(null);
@@ -135,8 +137,8 @@ export default function BankAnalysisModal({ visible, onClose }: Props) {
       transparent
       onRequestClose={handleClose}
     >
-      <View style={m.overlay}>
-        <View style={[m.sheet, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      <View style={[m.overlay, isDesktop && m.overlayDesktop]}>
+        <View style={[m.sheet, isDesktop && m.sheetDesktop, { backgroundColor: colors.surface, borderColor: colors.border }]}>
 
           {/* ── Prompt step ── */}
           {step === 'prompt' && (
@@ -310,6 +312,11 @@ const m = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent:  'flex-end',
   },
+  overlayDesktop: {
+    justifyContent: 'center',
+    alignItems:     'center',
+    padding:        spacing[6],
+  },
   sheet: {
     borderTopLeftRadius:  radius.xl,
     borderTopRightRadius: radius.xl,
@@ -318,6 +325,13 @@ const m = StyleSheet.create({
     paddingBottom:        spacing[10],
     maxHeight:            '85%',
     ...shadows.lg,
+  },
+  sheetDesktop: {
+    borderRadius:  radius.xl,
+    maxWidth:      520,
+    width:         '100%',
+    paddingBottom: spacing[6],
+    maxHeight:     '80%',
   },
   iconRow: {
     alignItems:   'center',

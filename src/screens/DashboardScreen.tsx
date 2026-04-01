@@ -36,6 +36,7 @@ import Card from '../components/Card';
 import ProgressBar from '../components/ProgressBar';
 import AddExpenseModal from '../components/AddExpenseModal';
 import { useBudget } from '../context/BudgetContext';
+import { useIsDesktop } from '../hooks/useIsDesktop';
 import { CategoryItem, DebtItem, Transaction } from '../types/budget';
 
 // ─── "Other" catch-all category ───────────────────────────────────────────────
@@ -1391,6 +1392,9 @@ const createStyles = (c: Colors) => StyleSheet.create({
     width: '100%',
     ...shadows.lg,
   },
+  meCardDesktop: {
+    maxWidth: 480,
+  },
   meEmoji: {
     fontSize: 44,
     marginBottom: spacing[3],
@@ -1442,6 +1446,7 @@ const createStyles = (c: Colors) => StyleSheet.create({
 export default function DashboardScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { budget, addTransaction, deleteTransaction, updateDebtBalance, monthEndPending, confirmMonthEnd } = useBudget();
+  const isDesktop = useIsDesktop();
   const { colors, isDark } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
@@ -1912,7 +1917,7 @@ export default function DashboardScreen() {
       statusBarTranslucent
     >
       <View style={styles.meOverlay}>
-        <View style={styles.meCard}>
+        <View style={[styles.meCard, isDesktop && styles.meCardDesktop]}>
           <Text style={styles.meEmoji}>📅</Text>
           <Text style={styles.meTitle}>It's a new month!</Text>
           <Text style={styles.meBody}>

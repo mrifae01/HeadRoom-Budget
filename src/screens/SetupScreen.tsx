@@ -1159,7 +1159,7 @@ const createStyles = (c: Colors) => StyleSheet.create({
 
 export default function SetupScreen() {
   // ── Pull data + actions from context ────────────────────────────────────────
-  const { budget, isLoading, saveBudget, simulateMonthEnd } = useBudget();
+  const { budget, isLoading, saveBudget/*, simulateMonthEnd*/ } = useBudget();
   const { isConnected: bankConnected } = useBank();
   const { colors, isDark } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -1446,6 +1446,7 @@ export default function SetupScreen() {
         )}
 
         {/* ── Dev: Simulate month end ── */}
+        {/* Commented out for production — uncomment to re-enable:
         <TouchableOpacity
           style={styles.simulateBtn}
           onPress={simulateMonthEnd}
@@ -1453,6 +1454,7 @@ export default function SetupScreen() {
         >
           <Text style={styles.simulateBtnText}>🧪 Simulate Month End</Text>
         </TouchableOpacity>
+        */}
 
         <View style={{ height: spacing[8] }} />
       </ScrollView>

@@ -22,6 +22,7 @@ import { typography, spacing, radius, shadows } from '../theme';
 import { Colors } from '../theme';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth }  from '../context/AuthContext';
+import { useIsDesktop } from '../hooks/useIsDesktop';
 import { RootStackParamList } from '../navigation/RootNavigator';
 import { MonthlyRecord } from '../types/budget';
 import {
@@ -299,6 +300,13 @@ const createStyles = (c: Colors) => StyleSheet.create({
     paddingTop: spacing[4],
     paddingBottom: spacing[8],
   },
+  contentDesktop: {
+    paddingHorizontal: spacing[8],
+    alignItems: 'center' as const,
+  },
+  headerDesktop: {
+    paddingHorizontal: spacing[8],
+  },
   empty: {
     flex: 1,
     alignItems: 'center',
@@ -351,6 +359,7 @@ export default function ReportsScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { colors, isDark } = useTheme();
   const { user } = useAuth();
+  const isDesktop = useIsDesktop();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const [records,   setRecords]   = useState<MonthlyRecord[]>([]);
@@ -431,6 +440,10 @@ export default function ReportsScreen() {
     );
   }, [loadRecords]);
 
+  const desktopConstraint = isDesktop
+    ? { maxWidth: 860, width: '100%' as const, alignSelf: 'center' as const }
+    : undefined;
+
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar
@@ -439,22 +452,26 @@ export default function ReportsScreen() {
       />
 
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => navigation.goBack()}
-          accessibilityLabel="Go back"
-        >
-          <Text style={styles.backText}>‹</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Monthly Reports</Text>
+      <View style={[styles.header, isDesktop && styles.headerDesktop]}>
+        <View style={desktopConstraint}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing[3] }}>
+            <TouchableOpacity
+              style={styles.backBtn}
+              onPress={() => navigation.goBack()}
+              accessibilityLabel="Go back"
+            >
+              <Text style={styles.backText}>‹</Text>
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Monthly Reports</Text>
 
-        {/* Dev reset button — only shown when sample data exists */}
-        {records.length > 0 && (
-          <TouchableOpacity style={styles.resetBtn} onPress={handleClear}>
-            <Text style={styles.resetBtnText}>Reset Sample</Text>
-          </TouchableOpacity>
-        )}
+            {/* Dev reset button — only shown when sample data exists */}
+            {records.length > 0 && (
+              <TouchableOpacity style={styles.resetBtn} onPress={handleClear}>
+                <Text style={styles.resetBtnText}>Reset Sample</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
       </View>
 
       {isLoading ? (
@@ -488,21 +505,23 @@ export default function ReportsScreen() {
       ) : (
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, isDesktop && styles.contentDesktop]}
           showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.sectionLabel}>
-            {records.length} month{records.length === 1 ? '' : 's'} archived
-          </Text>
+          <View style={desktopConstraint}>
+            <Text style={styles.sectionLabel}>
+              {records.length} month{records.length === 1 ? '' : 's'} archived
+            </Text>
 
-          {records.map((record) => (
-            <MonthCard
-              key={record.month}
-              record={record}
-              onPress={() => handlePress(record.month)}
-              onDelete={() => handleDelete(record)}
-            />
-          ))}
+            {records.map((record) => (
+              <MonthCard
+                key={record.month}
+                record={record}
+                onPress={() => handlePress(record.month)}
+                onDelete={() => handleDelete(record)}
+              />
+            ))}
+          </View>
         </ScrollView>
       )}
     </SafeAreaView>

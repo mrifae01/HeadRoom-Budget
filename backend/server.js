@@ -12,6 +12,7 @@
 require('dotenv').config();
 const express   = require('express');
 const cors      = require('cors');
+const rateLimit = require('express-rate-limit');
 const Anthropic = require('@anthropic-ai/sdk/index.js');
 const { createClient } = require('@supabase/supabase-js');
 
@@ -46,6 +47,40 @@ async function getUserId(req) {
   if (error || !user) return null;
   return user.id;
 }
+
+// ─── Rate limiters ────────────────────────────────────────────────────────────
+
+// For /api/chat — no auth on this route, so key by IP.
+// 40 messages per hour is generous for real users; blocks runaway abuse.
+const chatLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 40,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many messages. Please wait a moment before trying again.' },
+});
+
+// For authenticated routes — key by Authorization header (unique per user session).
+// Covers normal Teller polling (accounts + transactions on app load).
+const tellerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 60,
+  keyGenerator: (req) => req.headers.authorization || req.ip,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please try again later.' },
+});
+
+// For expensive one-shot operations (bank analysis, enroll, disconnect).
+// These hit both Teller and Claude — keep the daily budget tight.
+const expensiveLimiter = rateLimit({
+  windowMs: 24 * 60 * 60 * 1000,
+  max: 10,
+  keyGenerator: (req) => req.headers.authorization || req.ip,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Daily limit reached for this operation. Try again tomorrow.' },
+});
 
 // ─── Setup ────────────────────────────────────────────────────────────────────
 
@@ -170,7 +205,7 @@ ${txLines}
 
 // ─── Chat endpoint ────────────────────────────────────────────────────────────
 
-app.post('/api/chat', async (req, res) => {
+app.post('/api/chat', chatLimiter, async (req, res) => {
   try {
     const { messages, budgetContext } = req.body;
 
@@ -251,7 +286,7 @@ app.post('/api/chat', async (req, res) => {
  * Body: { accessToken, institutionName, enrollmentId }
  * Verifies the token against Teller, then upserts enrollment into Supabase.
  */
-app.post('/api/teller/enroll', async (req, res) => {
+app.post('/api/teller/enroll', expensiveLimiter, async (req, res) => {
   try {
     const userId = await getUserId(req);
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -289,7 +324,7 @@ app.post('/api/teller/enroll', async (req, res) => {
  * GET /api/teller/accounts
  * Returns connected accounts or { accounts: [], connected: false }.
  */
-app.get('/api/teller/accounts', async (req, res) => {
+app.get('/api/teller/accounts', tellerLimiter, async (req, res) => {
   try {
     const userId = await getUserId(req);
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -323,7 +358,7 @@ app.get('/api/teller/accounts', async (req, res) => {
  * GET /api/teller/transactions
  * Fetches transactions for all connected accounts, merges, sorts, returns first 90.
  */
-app.get('/api/teller/transactions', async (req, res) => {
+app.get('/api/teller/transactions', tellerLimiter, async (req, res) => {
   try {
     const userId = await getUserId(req);
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -366,7 +401,7 @@ app.get('/api/teller/transactions', async (req, res) => {
  * DELETE /api/teller/disconnect
  * Removes the enrollment record for the authenticated user.
  */
-app.delete('/api/teller/disconnect', async (req, res) => {
+app.delete('/api/teller/disconnect', expensiveLimiter, async (req, res) => {
   try {
     const userId = await getUserId(req);
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -447,7 +482,7 @@ Always call this tool — never describe numbers in plain text.`,
  * Fetches the user's Teller transactions, sends them to Claude, and returns
  * structured budget suggestions.
  */
-app.post('/api/bank/analyze', async (req, res) => {
+app.post('/api/bank/analyze', expensiveLimiter, async (req, res) => {
   try {
     const userId = await getUserId(req);
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
