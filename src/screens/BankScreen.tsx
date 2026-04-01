@@ -350,6 +350,14 @@ export default function BankScreen() {
   // ── Handlers ────────────────────────────────────────────────────────────────
 
   const handleConnect = useCallback(() => {
+    if (isConnected) {
+      Alert.alert(
+        'One bank at a time',
+        `HeadRoom currently supports one connected bank. You're already linked to ${institutionName ?? 'a bank'}.\n\nTo connect a different bank, disconnect your current one first.`,
+        [{ text: 'Got it', style: 'cancel' }],
+      );
+      return;
+    }
     openTeller(async (enrollment) => {
       try {
         await bank.connect(enrollment);
@@ -357,7 +365,7 @@ export default function BankScreen() {
         Alert.alert('Connection failed', 'Could not link your bank. Please try again.');
       }
     });
-  }, [openTeller, bank]);
+  }, [openTeller, bank, isConnected, institutionName]);
 
   const handleDisconnect = useCallback(() => {
     Alert.alert(
@@ -489,7 +497,7 @@ export default function BankScreen() {
             style={[screen.analyzeBtn, { backgroundColor: colors.primaryLight }]}
             activeOpacity={0.8}
           >
-            <Text style={[screen.analyzeLabel, { color: colors.primary }]}>✦ Analyse</Text>
+            <Text style={[screen.analyzeLabel, { color: colors.primary }]}>✦ Analyze</Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={handleDisconnect}

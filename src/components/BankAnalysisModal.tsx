@@ -1,5 +1,5 @@
 /**
- * BankAnalysisModal — analyses connected bank transactions with Claude and
+ * BankAnalysisModal — analyzes connected bank transactions with Claude and
  * proposes a full budget setup (income, categories, debts) that the user can
  * accept in one tap.
  *
@@ -147,7 +147,7 @@ export default function BankAnalysisModal({ visible, onClose }: Props) {
                 <Text style={m.icon}>🤖</Text>
               </View>
               <Text style={[m.title, { color: colors.textPrimary }]}>
-                Analyse your bank data?
+                Analyze your bank data?
               </Text>
               <Text style={[m.body, { color: colors.textSecondary }]}>
                 We'll look at your recent transactions and suggest income sources,
@@ -158,7 +158,7 @@ export default function BankAnalysisModal({ visible, onClose }: Props) {
                 onPress={handleAnalyze}
                 activeOpacity={0.85}
               >
-                <Text style={m.primaryBtnText}>Yes, analyse my transactions</Text>
+                <Text style={m.primaryBtnText}>Yes, analyze my transactions</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[m.secondaryBtn, { borderColor: colors.border }]}

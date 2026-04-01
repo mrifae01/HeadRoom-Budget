@@ -13,6 +13,7 @@ import { AuthProvider }   from './src/context/AuthContext';
 import { BudgetProvider } from './src/context/BudgetContext';
 import { BankProvider }   from './src/context/BankContext';
 import RootNavigator from './src/navigation/RootNavigator';
+import { Analytics } from '@vercel/analytics/react';
 
 export default function App() {
   return (
@@ -27,6 +28,7 @@ export default function App() {
             <NavigationContainer>
               <RootNavigator />
             </NavigationContainer>
+            <Analytics />
           </BankProvider>
         </BudgetProvider>
       </AuthProvider>

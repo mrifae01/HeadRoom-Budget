@@ -7,7 +7,7 @@
  *   Supabase Dashboard → Auth → Settings → "Enable email confirmations" (off)
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -27,6 +27,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useIsDesktop } from '../../hooks/useIsDesktop';
 import { typography, spacing, radius, shadows } from '../../theme';
 import { AuthStackParamList } from '../../../src/navigation/AuthNavigator';
+import { API_BASE_URL } from '../../config/api';
 
 type Nav = NativeStackNavigationProp<AuthStackParamList, 'SignUp'>;
 
@@ -43,6 +44,14 @@ export default function SignUpScreen() {
   const [error,      setError]      = useState<string | null>(null);
   const [loading,    setLoading]    = useState(false);
   const [confirmed,  setConfirmed]  = useState(false); // email confirm sent
+
+  // Check capacity on mount — redirect immediately if full.
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/api/auth/capacity`)
+      .then((r) => r.json())
+      .then((data) => { if (data.atCapacity) navigation.replace('Capacity'); })
+      .catch(() => null); // fail silently — don't block sign-up if check fails
+  }, [navigation]);
 
   const handleSignUp = useCallback(async () => {
     if (!email.trim() || !password || !confirm) {

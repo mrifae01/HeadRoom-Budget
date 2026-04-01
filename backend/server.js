@@ -82,6 +82,15 @@ const expensiveLimiter = rateLimit({
   message: { error: 'Daily limit reached for this operation. Try again tomorrow.' },
 });
 
+// For public endpoints (capacity check, waitlist) — IP only, tight window.
+const publicLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please try again later.' },
+});
+
 // ─── Setup ────────────────────────────────────────────────────────────────────
 
 const app    = express();
@@ -443,7 +452,7 @@ app.delete('/api/teller/disconnect', expensiveLimiter, async (req, res) => {
 
 const BUDGET_SETUP_TOOL = {
   name: 'suggest_budget_setup',
-  description: `Analyse the user's real bank transactions and suggest a complete
+  description: `Analyze the user's real bank transactions and suggest a complete
 budget setup. Map spending to the 12 preset categories exactly as listed.
 Always call this tool — never describe numbers in plain text.`,
   input_schema: {
@@ -537,7 +546,7 @@ app.post('/api/bank/analyze', expensiveLimiter, async (req, res) => {
       })
       .join('\n');
 
-    const systemPrompt = `You are a personal finance analyst. Analyse the bank transactions below and
+    const systemPrompt = `You are a personal finance analyst. Analyze the bank transactions below and
 call suggest_budget_setup with a complete budget suggestion.
 
 ALLOWED CATEGORIES (use exact names only):
@@ -560,7 +569,7 @@ Rules:
       system:     systemPrompt,
       tools:      [BUDGET_SETUP_TOOL],
       tool_choice: { type: 'any' },
-      messages:   [{ role: 'user', content: 'Please analyse my transactions and suggest a budget setup.' }],
+      messages:   [{ role: 'user', content: 'Please analyze my transactions and suggest a budget setup.' }],
     });
 
     const toolBlock = resp.content.find((b) => b.type === 'tool_use');
@@ -571,6 +580,63 @@ Rules:
   } catch (err) {
     console.error('[POST /api/bank/analyze]', err?.message);
     res.status(500).json({ error: err?.message ?? 'Analysis failed' });
+  }
+});
+
+// ─── Capacity check ───────────────────────────────────────────────────────────
+
+const USER_CAP = 100;
+
+/**
+ * GET /api/auth/capacity
+ * Public — no auth required (called before a user has an account).
+ * Returns { atCapacity: boolean, count: number }.
+ */
+app.get('/api/auth/capacity', publicLimiter, async (_req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers({ perPage: 200 });
+    if (error) throw error;
+    const count = data?.users?.length ?? 0;
+    res.json({ atCapacity: count >= USER_CAP, count });
+  } catch (err) {
+    console.error('[GET /api/auth/capacity]', err?.message);
+    res.status(500).json({ error: 'Could not check capacity.' });
+  }
+});
+
+// ─── Waitlist ─────────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/waitlist
+ * Public — no auth required.
+ * Body: { email: string }
+ * Stores email in the waitlist table. Silently succeeds on duplicate.
+ */
+app.post('/api/waitlist', publicLimiter, async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (
+      !email ||
+      typeof email !== 'string' ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ||
+      email.length > 254
+    ) {
+      return res.status(400).json({ error: 'A valid email address is required.' });
+    }
+
+    const { error } = await supabaseAdmin
+      .from('waitlist')
+      .insert({ email: email.trim().toLowerCase() });
+
+    // Unique constraint violation = already on list. Still return ok — don't
+    // reveal whether an email was previously registered.
+    if (error && error.code !== '23505') throw error;
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[POST /api/waitlist]', err?.message);
+    res.status(500).json({ error: 'Could not save your email. Please try again.' });
   }
 });
 

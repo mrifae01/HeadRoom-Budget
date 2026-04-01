@@ -1327,7 +1327,7 @@ export default function SetupScreen() {
                 Bank connected
               </Text>
               <Text style={[styles.bankBannerSub, { color: colors.primary }]}>
-                Tap to analyse transactions and auto-fill your setup
+                Tap to analyze transactions and auto-fill your setup
               </Text>
             </View>
             <Text style={[styles.bankBannerChevron, { color: colors.primary }]}>›</Text>
