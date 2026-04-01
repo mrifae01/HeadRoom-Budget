@@ -34,6 +34,8 @@ import Card from '../components/Card';
 import SectionHeader from '../components/SectionHeader';
 import StyledInput from '../components/StyledInput';
 import { useBudget } from '../context/BudgetContext';
+import { useBank } from '../context/BankContext';
+import BankAnalysisModal from '../components/BankAnalysisModal';
 import { IncomeSource, IncomeType, DebtItem, CategoryItem } from '../types/budget';
 import { PRESET_CATEGORIES, PresetCategory } from '../data/categories';
 
@@ -1054,6 +1056,34 @@ const createStyles = (c: Colors) => StyleSheet.create({
     marginTop: spacing[1],
     lineHeight: typography.sm * typography.relaxed,
   },
+  bankBanner: {
+    flexDirection:  'row',
+    alignItems:     'center',
+    borderRadius:   radius.lg,
+    borderWidth:    1.5,
+    padding:        spacing[4],
+    marginBottom:   spacing[5],
+    gap:            spacing[3],
+  },
+  bankBannerIcon: {
+    fontSize: 22,
+  },
+  bankBannerText: {
+    flex: 1,
+    gap:  2,
+  },
+  bankBannerTitle: {
+    fontSize:   typography.sm,
+    fontWeight: typography.semibold,
+  },
+  bankBannerSub: {
+    fontSize: typography.xs,
+    opacity:  0.8,
+  },
+  bankBannerChevron: {
+    fontSize:   22,
+    lineHeight: 24,
+  },
   section: {
     marginBottom: spacing[4],
   },
@@ -1130,8 +1160,11 @@ const createStyles = (c: Colors) => StyleSheet.create({
 export default function SetupScreen() {
   // ── Pull data + actions from context ────────────────────────────────────────
   const { budget, isLoading, saveBudget, simulateMonthEnd } = useBudget();
+  const { isConnected: bankConnected } = useBank();
   const { colors, isDark } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+
+  const [analysisVisible, setAnalysisVisible] = useState(false);
 
   // ── Local form state (mirrors context, edited in-place before saving) ───────
   const [incomeSources, setIncomeSources] = useState<IncomeSource[]>(budget.incomeSources);
@@ -1281,6 +1314,26 @@ export default function SetupScreen() {
           </Text>
         </View>
 
+        {/* ── Bank analysis banner (shown when a bank is connected) ── */}
+        {bankConnected && (
+          <TouchableOpacity
+            onPress={() => setAnalysisVisible(true)}
+            style={[styles.bankBanner, { backgroundColor: colors.primaryLight, borderColor: colors.primary }]}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.bankBannerIcon}>🏦</Text>
+            <View style={styles.bankBannerText}>
+              <Text style={[styles.bankBannerTitle, { color: colors.primary }]}>
+                Bank connected
+              </Text>
+              <Text style={[styles.bankBannerSub, { color: colors.primary }]}>
+                Tap to analyse transactions and auto-fill your setup
+              </Text>
+            </View>
+            <Text style={[styles.bankBannerChevron, { color: colors.primary }]}>›</Text>
+          </TouchableOpacity>
+        )}
+
         {/* ── Section 1: Income Sources ── */}
         <Card style={styles.section}>
           <SectionHeader
@@ -1404,6 +1457,12 @@ export default function SetupScreen() {
         <View style={{ height: spacing[8] }} />
       </ScrollView>
       </KeyboardAvoidingView>
+
+      <BankAnalysisModal
+        visible={analysisVisible}
+        onClose={() => setAnalysisVisible(false)}
+      />
+
     </SafeAreaView>
   );
 }

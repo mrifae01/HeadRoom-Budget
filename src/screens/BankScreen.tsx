@@ -10,7 +10,7 @@
  * Teller Connect widget is web-only. Mobile shows an informational message.
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -29,6 +29,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useBank }  from '../context/BankContext';
 import { useBudget } from '../context/BudgetContext';
 import { useTellerConnect } from '../hooks/useTellerConnect';
+import BankAnalysisModal from '../components/BankAnalysisModal';
 import { typography, spacing, radius, shadows } from '../theme';
 import { TellerTransaction } from '../types/teller';
 import { CategoryItem } from '../types/budget';
@@ -331,11 +332,20 @@ export default function BankScreen() {
   const { budget, addTransaction } = useBudget();
   const { open: openTeller } = useTellerConnect();
 
-  const [selectedTx,   setSelectedTx]   = useState<TellerTransaction | null>(null);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [refreshing,   setRefreshing]   = useState(false);
+  const [selectedTx,      setSelectedTx]      = useState<TellerTransaction | null>(null);
+  const [modalVisible,    setModalVisible]    = useState(false);
+  const [refreshing,      setRefreshing]      = useState(false);
+  const [analysisVisible, setAnalysisVisible] = useState(false);
 
-  const { isConnected, isLoading, institutionName, transactions } = bank;
+  const { isConnected, isLoading, institutionName, transactions, justConnected, clearJustConnected } = bank;
+
+  // Auto-show analysis modal right after a fresh connection
+  useEffect(() => {
+    if (justConnected) {
+      clearJustConnected();
+      setAnalysisVisible(true);
+    }
+  }, [justConnected, clearJustConnected]);
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
@@ -473,13 +483,22 @@ export default function BankScreen() {
           </View>
         </View>
 
-        <TouchableOpacity
-          onPress={handleDisconnect}
-          style={[screen.disconnectBtn, { borderColor: colors.danger }]}
-          activeOpacity={0.8}
-        >
-          <Text style={[screen.disconnectLabel, { color: colors.danger }]}>Disconnect</Text>
-        </TouchableOpacity>
+        <View style={screen.headerRight}>
+          <TouchableOpacity
+            onPress={() => setAnalysisVisible(true)}
+            style={[screen.analyzeBtn, { backgroundColor: colors.primaryLight }]}
+            activeOpacity={0.8}
+          >
+            <Text style={[screen.analyzeLabel, { color: colors.primary }]}>✦ Analyse</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleDisconnect}
+            style={[screen.disconnectBtn, { borderColor: colors.danger }]}
+            activeOpacity={0.8}
+          >
+            <Text style={[screen.disconnectLabel, { color: colors.danger }]}>Disconnect</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Transactions list */}
@@ -524,6 +543,12 @@ export default function BankScreen() {
         categories={budget.categories}
         onImport={handleImport}
         onClose={() => { setModalVisible(false); setSelectedTx(null); }}
+      />
+
+      {/* Bank analysis modal */}
+      <BankAnalysisModal
+        visible={analysisVisible}
+        onClose={() => setAnalysisVisible(false)}
       />
 
     </View>
@@ -571,6 +596,20 @@ const screen = StyleSheet.create({
     alignItems:    'center',
     gap:           spacing[3],
     flexWrap:      'wrap',
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           spacing[2],
+  },
+  analyzeBtn: {
+    paddingHorizontal: spacing[3],
+    paddingVertical:   spacing[2],
+    borderRadius:      radius.md,
+  },
+  analyzeLabel: {
+    fontSize:   typography.sm,
+    fontWeight: typography.semibold,
   },
   disconnectBtn: {
     paddingHorizontal: spacing[3],

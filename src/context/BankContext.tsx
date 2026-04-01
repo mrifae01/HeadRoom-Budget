@@ -50,10 +50,12 @@ interface BankContextValue {
   institutionName: string | null;
   accounts:        TellerAccount[];
   transactions:    TellerTransaction[];
+  justConnected:   boolean;
 
-  connect:    (enrollment: TellerEnrollment) => Promise<void>;
-  disconnect: ()                              => Promise<void>;
-  refresh:    ()                              => Promise<void>;
+  connect:              (enrollment: TellerEnrollment) => Promise<void>;
+  disconnect:           ()                              => Promise<void>;
+  refresh:              ()                              => Promise<void>;
+  clearJustConnected:   ()                              => void;
 }
 
 // ─── Context + hook ───────────────────────────────────────────────────────────
@@ -74,6 +76,7 @@ export function BankProvider({ children }: { children: ReactNode }) {
   const [institutionName, setInstitutionName] = useState<string | null>(null);
   const [accounts,        setAccounts]        = useState<TellerAccount[]>([]);
   const [transactions,    setTransactions]    = useState<TellerTransaction[]>([]);
+  const [justConnected,   setJustConnected]   = useState(false);
 
   // ── Internal fetch helpers ─────────────────────────────────────────────────
 
@@ -136,6 +139,7 @@ export function BankProvider({ children }: { children: ReactNode }) {
 
       await fetchAccounts();
       await fetchTransactions();
+      setJustConnected(true);
     } catch (err) {
       console.error('[BankContext] connect failed:', err);
       throw err;
@@ -163,6 +167,10 @@ export function BankProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const clearJustConnected = useCallback((): void => {
+    setJustConnected(false);
+  }, []);
+
   const refresh = useCallback(async (): Promise<void> => {
     setIsLoading(true);
     try {
@@ -180,9 +188,11 @@ export function BankProvider({ children }: { children: ReactNode }) {
       institutionName,
       accounts,
       transactions,
+      justConnected,
       connect,
       disconnect,
       refresh,
+      clearJustConnected,
     }}>
       {children}
     </BankContext.Provider>

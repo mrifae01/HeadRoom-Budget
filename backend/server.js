@@ -385,6 +385,141 @@ app.delete('/api/teller/disconnect', async (req, res) => {
   }
 });
 
+// ─── Bank analysis route ──────────────────────────────────────────────────────
+
+const BUDGET_SETUP_TOOL = {
+  name: 'suggest_budget_setup',
+  description: `Analyse the user's real bank transactions and suggest a complete
+budget setup. Map spending to the 12 preset categories exactly as listed.
+Always call this tool — never describe numbers in plain text.`,
+  input_schema: {
+    type: 'object',
+    properties: {
+      summary: {
+        type: 'string',
+        description: 'A 2-3 sentence plain-English summary of what you found and why you made these suggestions.',
+      },
+      incomeSources: {
+        type: 'array',
+        description: 'Detected recurring income or savings sources.',
+        items: {
+          type: 'object',
+          properties: {
+            name:   { type: 'string', description: 'Descriptive label, e.g. "Direct Deposit".' },
+            amount: { type: 'string', description: 'Monthly amount as a whole-dollar string, e.g. "3200".' },
+            type:   { type: 'string', enum: ['income', 'no_income'], description: '"income" for paycheck/salary, "no_income" for savings draw.' },
+          },
+          required: ['name', 'amount', 'type'],
+        },
+      },
+      categories: {
+        type: 'array',
+        description: 'Suggested monthly budget limits. Only include categories from this exact list: Rent/Mortgage, Groceries, Utilities, Transportation, Car/Gas, Dining Out, Entertainment, Fun, Insurance, Child, Pet, Other/Misc.',
+        items: {
+          type: 'object',
+          properties: {
+            name:   { type: 'string', description: 'Exact category name from the allowed list.' },
+            amount: { type: 'string', description: 'Monthly budget limit as a whole-dollar string.' },
+          },
+          required: ['name', 'amount'],
+        },
+      },
+      debts: {
+        type: 'array',
+        description: 'Detected recurring debt or loan payments.',
+        items: {
+          type: 'object',
+          properties: {
+            name:        { type: 'string', description: 'Debt name, e.g. "Student Loan".' },
+            amount:      { type: 'string', description: 'Monthly payment as a whole-dollar string.' },
+            totalAmount: { type: 'string', description: 'Estimated total balance if determinable, else omit.' },
+          },
+          required: ['name', 'amount'],
+        },
+      },
+    },
+    required: ['summary', 'incomeSources', 'categories', 'debts'],
+  },
+};
+
+/**
+ * POST /api/bank/analyze
+ * Fetches the user's Teller transactions, sends them to Claude, and returns
+ * structured budget suggestions.
+ */
+app.post('/api/bank/analyze', async (req, res) => {
+  try {
+    const userId = await getUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { data: enrollment, error: dbErr } = await supabaseAdmin
+      .from('teller_enrollments')
+      .select('access_token')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (dbErr) throw dbErr;
+    if (!enrollment) return res.status(400).json({ error: 'No bank connected' });
+
+    // Fetch accounts + transactions
+    const accounts = await tellerFetch('/accounts', enrollment.access_token);
+    const txArrays = await Promise.all(
+      accounts.map(async (account) => {
+        const txs = await tellerFetch(`/accounts/${account.id}/transactions`, enrollment.access_token);
+        return txs.map((tx) => ({ ...tx, accountName: account.name }));
+      }),
+    );
+    const transactions = txArrays
+      .flat()
+      .sort((a, b) => (a.date < b.date ? 1 : -1))
+      .slice(0, 60);
+
+    const txLines = transactions
+      .map((t) => {
+        const amt    = parseFloat(t.amount);
+        const sign   = amt < 0 ? '-' : '+';
+        const name   = t.details?.counterparty?.name ?? t.description ?? '';
+        return `${t.date}  ${sign}$${Math.abs(amt).toFixed(2)}  ${name}  (${t.accountName})`;
+      })
+      .join('\n');
+
+    const systemPrompt = `You are a personal finance analyst. Analyse the bank transactions below and
+call suggest_budget_setup with a complete budget suggestion.
+
+ALLOWED CATEGORIES (use exact names only):
+Rent/Mortgage, Groceries, Utilities, Transportation, Car/Gas, Dining Out,
+Entertainment, Fun, Insurance, Child, Pet, Other/Misc
+
+TRANSACTIONS (most recent first):
+${txLines}
+
+Rules:
+• Whole-dollar amounts only (no cents).
+• Identify recurring credits as income sources.
+• Identify recurring fixed payments (loans, subscriptions) as debts if they look like financing.
+• Map all spending to the 12 allowed categories; use Other/Misc as a catch-all.
+• Be conservative — suggest limits slightly above observed spending.`;
+
+    const resp = await client.messages.create({
+      model:      'claude-haiku-4-5',
+      max_tokens: 1024,
+      system:     systemPrompt,
+      tools:      [BUDGET_SETUP_TOOL],
+      tool_choice: { type: 'any' },
+      messages:   [{ role: 'user', content: 'Please analyse my transactions and suggest a budget setup.' }],
+    });
+
+    const toolBlock = resp.content.find((b) => b.type === 'tool_use');
+    if (!toolBlock) return res.status(500).json({ error: 'No analysis returned' });
+
+    const { summary, incomeSources, categories, debts } = toolBlock.input;
+    res.json({ summary, incomeSources, categories, debts });
+  } catch (err) {
+    console.error('[POST /api/bank/analyze]', err?.message);
+    res.status(500).json({ error: err?.message ?? 'Analysis failed' });
+  }
+});
+
 // ─── Health check (useful for deployment monitoring) ─────────────────────────
 
 app.get('/health', (_req, res) => res.json({ ok: true }));
