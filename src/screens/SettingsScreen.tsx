@@ -23,7 +23,10 @@ import {
   TextInput,
   Modal,
   KeyboardAvoidingView,
+  ActivityIndicator,
 } from 'react-native';
+import { supabase } from '../config/supabase';
+import { API_BASE_URL } from '../config/api';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth }  from '../context/AuthContext';
 import { typography, spacing, radius, shadows } from '../theme';
@@ -238,6 +241,52 @@ export default function SettingsScreen() {
     : '—';
 
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [deleting,     setDeleting]     = useState(false);
+
+  const confirmDelete = useCallback(async () => {
+    setDeleting(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const jwt = session?.access_token ?? null;
+
+      const res = await fetch(`${API_BASE_URL}/api/auth/account`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}),
+        },
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? 'Failed to delete account.');
+      }
+
+      await signOut();
+    } catch (err) {
+      setDeleting(false);
+      Alert.alert('Error', err instanceof Error ? err.message : 'Failed to delete account. Please try again.');
+    }
+  }, [signOut]);
+
+  const handleDeleteAccount = useCallback(() => {
+    if (Platform.OS === 'web') {
+      if (window.confirm('Delete your account? This will permanently erase all your data and cannot be undone.')) {
+        if (window.confirm('Last chance — your budget, transactions, and bank connections will be deleted forever. Continue?')) {
+          confirmDelete();
+        }
+      }
+    } else {
+      Alert.alert(
+        'Delete Account',
+        'This will permanently delete your account, budget, all transactions, and bank connections. This cannot be undone.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Delete Forever', style: 'destructive', onPress: confirmDelete },
+        ],
+      );
+    }
+  }, [confirmDelete]);
 
   const handleSignOut = useCallback(() => {
     if (Platform.OS === 'web') {
@@ -361,6 +410,31 @@ export default function SettingsScreen() {
           />
         </SettingGroup>
 
+        {/* ── DANGER ZONE ─────────────────────────────────── */}
+        <SectionLabel label="Danger Zone" />
+        <TouchableOpacity
+          style={[styles.dangerCard, { backgroundColor: colors.surface, borderColor: colors.danger + '40' }]}
+          onPress={handleDeleteAccount}
+          disabled={deleting}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.iconBubble, { backgroundColor: colors.danger + '18' }]}>
+            <Text style={styles.iconText}>🗑️</Text>
+          </View>
+          <View style={styles.labelWrap}>
+            <Text style={[styles.label, { color: colors.danger }]}>
+              {deleting ? 'Deleting account...' : 'Delete Account'}
+            </Text>
+            <Text style={[styles.sublabel, { color: colors.textMuted }]}>
+              Permanently erase all your data
+            </Text>
+          </View>
+          {deleting
+            ? <ActivityIndicator size="small" color={colors.danger} />
+            : <Text style={[styles.signOutChevron, { color: colors.danger }]}>›</Text>
+          }
+        </TouchableOpacity>
+
         {/* Footer */}
         <View style={styles.footer}>
           <Text style={[styles.footerText, { color: colors.textMuted }]}>
@@ -474,6 +548,14 @@ const styles = StyleSheet.create({
     fontSize: 22,
     lineHeight: 24,
     marginLeft: spacing[2],
+  },
+  dangerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[3] + 2,
   },
 });
 

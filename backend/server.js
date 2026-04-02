@@ -583,6 +583,33 @@ Rules:
   }
 });
 
+// ─── Account deletion ─────────────────────────────────────────────────────────
+
+/**
+ * DELETE /api/auth/account
+ * Permanently deletes all user data and the auth account itself.
+ * Order: transactions → monthly_records → teller_enrollments → budgets → auth user
+ */
+app.delete('/api/auth/account', expensiveLimiter, async (req, res) => {
+  try {
+    const userId = await getUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    await supabaseAdmin.from('transactions').delete().eq('user_id', userId);
+    await supabaseAdmin.from('monthly_records').delete().eq('user_id', userId);
+    await supabaseAdmin.from('teller_enrollments').delete().eq('user_id', userId);
+    await supabaseAdmin.from('budgets').delete().eq('user_id', userId);
+
+    const { error } = await supabaseAdmin.auth.admin.deleteUser(userId);
+    if (error) throw error;
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[DELETE /api/auth/account]', err?.message);
+    res.status(500).json({ error: 'Failed to delete account. Please try again.' });
+  }
+});
+
 // ─── Capacity check ───────────────────────────────────────────────────────────
 
 const USER_CAP = 100;
