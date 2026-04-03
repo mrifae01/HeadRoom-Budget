@@ -1,9 +1,10 @@
 {
-  "buildCommand": "npm run build && cp public/privacy.html dist/privacy.html && cp public/terms.html dist/terms.html",
+  "buildCommand": "npm run build && cp public/privacy.html dist/privacy.html && cp public/terms.html dist/terms.html && cp public/admin.html dist/admin.html",
   "outputDirectory": "dist",
   "rewrites": [
     { "source": "/privacy", "destination": "/privacy.html" },
     { "source": "/terms",   "destination": "/terms.html"   },
+    { "source": "/admin",   "destination": "/admin.html"   },
     { "source": "/(.*)",    "destination": "/index.html"   }
   ]
 }

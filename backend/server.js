@@ -15,6 +15,12 @@ const cors      = require('cors');
 const rateLimit = require('express-rate-limit');
 const Anthropic = require('@anthropic-ai/sdk/index.js');
 const { createClient } = require('@supabase/supabase-js');
+const { Resend }       = require('resend');
+
+// ─── Resend email client ──────────────────────────────────────────────────────
+
+const resend = new Resend(process.env.RESEND_API_KEY);
+const FROM_EMAIL = 'HeadRoom <hello@headroombudget.com>';
 
 // ─── Supabase admin client (service role — never exposed to frontend) ──────────
 
@@ -664,6 +670,135 @@ app.post('/api/waitlist', publicLimiter, async (req, res) => {
   } catch (err) {
     console.error('[POST /api/waitlist]', err?.message);
     res.status(500).json({ error: 'Could not save your email. Please try again.' });
+  }
+});
+
+// ─── Admin middleware ─────────────────────────────────────────────────────────
+// Protects all /admin/* routes with a secret key set in Railway env vars.
+
+function requireAdminKey(req, res, next) {
+  const key = req.headers['x-admin-key'];
+  if (!key || key !== process.env.ADMIN_KEY) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+}
+
+const adminLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many admin requests.' },
+});
+
+// ─── Admin: stats ────────────────────────────────────────────────────────────
+
+app.get('/admin/email/stats', adminLimiter, requireAdminKey, async (_req, res) => {
+  try {
+    const { data: waitlist, error } = await supabaseAdmin
+      .from('waitlist')
+      .select('id', { count: 'exact', head: true });
+    if (error) throw error;
+    res.json({ waitlistCount: waitlist?.length ?? 0 });
+  } catch (err) {
+    console.error('[GET /admin/email/stats]', err?.message);
+    res.status(500).json({ error: 'Could not fetch stats.' });
+  }
+});
+
+// ─── Admin: email waitlist ────────────────────────────────────────────────────
+
+/**
+ * POST /admin/email/waitlist
+ * Headers: x-admin-key: <ADMIN_KEY>
+ * Body: { subject: string, message: string }
+ * Sends a plain-text email to everyone on the waitlist.
+ */
+app.post('/admin/email/waitlist', adminLimiter, requireAdminKey, async (req, res) => {
+  try {
+    const { subject, message } = req.body;
+    if (!subject?.trim() || !message?.trim()) {
+      return res.status(400).json({ error: 'subject and message are required.' });
+    }
+
+    const { data: rows, error: dbErr } = await supabaseAdmin
+      .from('waitlist')
+      .select('email');
+    if (dbErr) throw dbErr;
+
+    if (!rows || rows.length === 0) {
+      return res.json({ ok: true, sent: 0, message: 'No waitlist emails found.' });
+    }
+
+    const emails = rows.map(r => r.email);
+
+    // Send in batches of 50 (Resend batch limit)
+    const BATCH = 50;
+    let sent = 0;
+    for (let i = 0; i < emails.length; i += BATCH) {
+      const batch = emails.slice(i, i + BATCH);
+      await resend.batch.send(batch.map(to => ({
+        from:    FROM_EMAIL,
+        to,
+        subject: subject.trim(),
+        text:    message.trim() + '\n\n---\nYou are receiving this because you joined the HeadRoom waitlist.\nHeadRoom · headroombudget.com',
+      })));
+      sent += batch.length;
+    }
+
+    console.log(`[admin/email/waitlist] Sent to ${sent} waitlist addresses.`);
+    res.json({ ok: true, sent });
+  } catch (err) {
+    console.error('[POST /admin/email/waitlist]', err?.message);
+    res.status(500).json({ error: err?.message ?? 'Failed to send emails.' });
+  }
+});
+
+// ─── Admin: broadcast to all users ───────────────────────────────────────────
+
+/**
+ * POST /admin/email/broadcast
+ * Headers: x-admin-key: <ADMIN_KEY>
+ * Body: { subject: string, message: string }
+ * Sends a plain-text email to all registered HeadRoom users.
+ */
+app.post('/admin/email/broadcast', adminLimiter, requireAdminKey, async (req, res) => {
+  try {
+    const { subject, message } = req.body;
+    if (!subject?.trim() || !message?.trim()) {
+      return res.status(400).json({ error: 'subject and message are required.' });
+    }
+
+    const { data, error: authErr } = await supabaseAdmin.auth.admin.listUsers({ perPage: 200 });
+    if (authErr) throw authErr;
+
+    const emails = (data?.users ?? [])
+      .map(u => u.email)
+      .filter(Boolean);
+
+    if (emails.length === 0) {
+      return res.json({ ok: true, sent: 0, message: 'No users found.' });
+    }
+
+    const BATCH = 50;
+    let sent = 0;
+    for (let i = 0; i < emails.length; i += BATCH) {
+      const batch = emails.slice(i, i + BATCH);
+      await resend.batch.send(batch.map(to => ({
+        from:    FROM_EMAIL,
+        to,
+        subject: subject.trim(),
+        text:    message.trim() + '\n\n---\nYou are receiving this as a registered HeadRoom user.\nHeadRoom · headroombudget.com',
+      })));
+      sent += batch.length;
+    }
+
+    console.log(`[admin/email/broadcast] Sent to ${sent} users.`);
+    res.json({ ok: true, sent });
+  } catch (err) {
+    console.error('[POST /admin/email/broadcast]', err?.message);
+    res.status(500).json({ error: err?.message ?? 'Failed to send emails.' });
   }
 });
 

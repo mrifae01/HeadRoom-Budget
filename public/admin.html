@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HeadRoom Admin</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #f8f9fb;
+      color: #1a1a2e;
+      padding: 40px 16px 80px;
+    }
+
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 32px;
+    }
+
+    .logo {
+      width: 36px; height: 36px;
+      background: #3b6eff;
+      border-radius: 9px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px; color: #fff;
+    }
+
+    .brand-name {
+      font-size: 18px;
+      font-weight: 700;
+      color: #1a1a2e;
+    }
+
+    .brand-badge {
+      font-size: 11px;
+      font-weight: 600;
+      background: #1a1a2e;
+      color: #fff;
+      padding: 2px 8px;
+      border-radius: 20px;
+      letter-spacing: 0.5px;
+    }
+
+    h1 {
+      font-size: 22px;
+      font-weight: 800;
+      margin-bottom: 6px;
+      color: #1a1a2e;
+    }
+
+    .subtitle {
+      font-size: 14px;
+      color: #6b7280;
+      margin-bottom: 28px;
+    }
+
+    .card {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 14px;
+      padding: 28px;
+      margin-bottom: 20px;
+    }
+
+    .card h2 {
+      font-size: 15px;
+      font-weight: 700;
+      color: #1a1a2e;
+      margin-bottom: 18px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+
+    input[type="password"],
+    input[type="text"],
+    textarea {
+      width: 100%;
+      border: 1.5px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 15px;
+      color: #1a1a2e;
+      background: #f8f9fb;
+      margin-bottom: 16px;
+      font-family: inherit;
+      transition: border-color 0.15s;
+      outline: none;
+    }
+
+    input:focus, textarea:focus {
+      border-color: #3b6eff;
+      background: #fff;
+    }
+
+    textarea {
+      min-height: 120px;
+      resize: vertical;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      flex: 1;
+      min-width: 140px;
+      border: none;
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+      font-family: inherit;
+    }
+
+    button:hover { opacity: 0.88; }
+    button:active { transform: scale(0.98); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .btn-waitlist  { background: #3b6eff; color: #fff; }
+    .btn-broadcast { background: #1a1a2e; color: #fff; }
+    .btn-both      { background: #059669; color: #fff; }
+
+    .result {
+      margin-top: 16px;
+      padding: 14px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      display: none;
+    }
+
+    .result.success { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
+    .result.error   { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+
+    .divider {
+      height: 1px;
+      background: #e5e7eb;
+      margin: 20px 0;
+    }
+
+    #lock-screen { display: block; }
+    #main-screen { display: none; }
+
+    .unlock-btn {
+      width: 100%;
+      background: #3b6eff;
+      color: #fff;
+      margin-top: 4px;
+    }
+
+    .stats {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .stat-card {
+      flex: 1;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 16px;
+      text-align: center;
+    }
+
+    .stat-num {
+      font-size: 28px;
+      font-weight: 800;
+      color: #3b6eff;
+    }
+
+    .stat-label {
+      font-size: 12px;
+      color: #6b7280;
+      margin-top: 2px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <div class="brand">
+      <div class="logo">✦</div>
+      <span class="brand-name">HeadRoom</span>
+      <span class="brand-badge">ADMIN</span>
+    </div>
+
+    <!-- Lock screen -->
+    <div id="lock-screen">
+      <div class="card">
+        <h2>🔐 Admin Access</h2>
+        <label for="admin-key-input">Admin Key</label>
+        <input type="password" id="admin-key-input" placeholder="Enter your admin key" />
+        <button class="unlock-btn" onclick="unlock()">Unlock</button>
+        <div id="lock-error" class="result error" style="display:none;">Incorrect admin key.</div>
+      </div>
+    </div>
+
+    <!-- Main screen (shown after unlock) -->
+    <div id="main-screen">
+
+      <h1>Email Dashboard</h1>
+      <p class="subtitle">Send notifications to waitlist and/or all registered users.</p>
+
+      <!-- Stats -->
+      <div class="stats">
+        <div class="stat-card">
+          <div class="stat-num" id="stat-users">—</div>
+          <div class="stat-label">Registered Users</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="stat-waitlist">—</div>
+          <div class="stat-label">Waitlist Emails</div>
+        </div>
+      </div>
+
+      <!-- Compose -->
+      <div class="card">
+        <h2>✉️ Compose Message</h2>
+
+        <label for="subject">Subject</label>
+        <input type="text" id="subject" placeholder="e.g. A spot just opened in HeadRoom!" />
+
+        <label for="message">Message</label>
+        <textarea id="message" placeholder="Write your message here..."></textarea>
+
+        <div class="divider"></div>
+
+        <div class="btn-row">
+          <button class="btn-waitlist"  onclick="send('waitlist')"  id="btn-waitlist">
+            📋 Waitlist Only
+          </button>
+          <button class="btn-broadcast" onclick="send('broadcast')" id="btn-broadcast">
+            📣 All Users
+          </button>
+          <button class="btn-both"      onclick="sendBoth()"        id="btn-both">
+            🚀 Both
+          </button>
+        </div>
+
+        <div id="result" class="result"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    const BACKEND = 'https://headroom-production.up.railway.app';
+    let adminKey = '';
+
+    function unlock() {
+      const input = document.getElementById('admin-key-input').value.trim();
+      if (!input) return;
+      adminKey = input;
+      document.getElementById('lock-screen').style.display = 'none';
+      document.getElementById('main-screen').style.display = 'block';
+      loadStats();
+    }
+
+    document.getElementById('admin-key-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') unlock();
+    });
+
+    async function loadStats() {
+      try {
+        // Capacity endpoint gives us user count
+        const res = await fetch(`${BACKEND}/api/auth/capacity`);
+        const data = await res.json();
+        document.getElementById('stat-users').textContent = data.count ?? '—';
+      } catch { document.getElementById('stat-users').textContent = '?'; }
+
+      try {
+        const res = await fetch(`${BACKEND}/admin/email/stats`, {
+          headers: { 'x-admin-key': adminKey },
+        });
+        const data = await res.json();
+        document.getElementById('stat-waitlist').textContent = data.waitlistCount ?? '—';
+      } catch { document.getElementById('stat-waitlist').textContent = '?'; }
+    }
+
+    function setButtons(disabled) {
+      ['btn-waitlist', 'btn-broadcast', 'btn-both'].forEach(id => {
+        document.getElementById(id).disabled = disabled;
+      });
+    }
+
+    function showResult(text, isError) {
+      const el = document.getElementById('result');
+      el.textContent = text;
+      el.className = 'result ' + (isError ? 'error' : 'success');
+      el.style.display = 'block';
+    }
+
+    async function send(target) {
+      const subject = document.getElementById('subject').value.trim();
+      const message = document.getElementById('message').value.trim();
+      if (!subject || !message) {
+        showResult('Please fill in both subject and message.', true);
+        return;
+      }
+
+      setButtons(true);
+      showResult('Sending...', false);
+
+      try {
+        const res = await fetch(`${BACKEND}/admin/email/${target}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-admin-key': adminKey,
+          },
+          body: JSON.stringify({ subject, message }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        const label = target === 'waitlist' ? 'waitlist' : 'users';
+        showResult(`✓ Sent to ${data.sent} ${label}.`, false);
+      } catch (err) {
+        showResult('Error: ' + (err.message ?? 'Something went wrong.'), true);
+      } finally {
+        setButtons(false);
+      }
+    }
+
+    async function sendBoth() {
+      const subject = document.getElementById('subject').value.trim();
+      const message = document.getElementById('message').value.trim();
+      if (!subject || !message) {
+        showResult('Please fill in both subject and message.', true);
+        return;
+      }
+
+      setButtons(true);
+      showResult('Sending to both...', false);
+
+      try {
+        const [r1, r2] = await Promise.all([
+          fetch(`${BACKEND}/admin/email/waitlist`,  { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-key': adminKey }, body: JSON.stringify({ subject, message }) }),
+          fetch(`${BACKEND}/admin/email/broadcast`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-key': adminKey }, body: JSON.stringify({ subject, message }) }),
+        ]);
+        const [d1, d2] = await Promise.all([r1.json(), r2.json()]);
+        if (!r1.ok) throw new Error(d1.error);
+        if (!r2.ok) throw new Error(d2.error);
+        showResult(`✓ Sent to ${d1.sent} waitlist + ${d2.sent} users.`, false);
+      } catch (err) {
+        showResult('Error: ' + (err.message ?? 'Something went wrong.'), true);
+      } finally {
+        setButtons(false);
+      }
+    }
+  </script>
+</body>
+</html>
