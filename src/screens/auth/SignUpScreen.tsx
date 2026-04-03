@@ -19,6 +19,7 @@ import {
   ScrollView,
   Platform,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
@@ -41,6 +42,7 @@ export default function SignUpScreen() {
   const [password,   setPassword]   = useState('');
   const [confirm,    setConfirm]    = useState('');
   const [showPass,   setShowPass]   = useState(false);
+  const [agreed,     setAgreed]     = useState(false);
   const [error,      setError]      = useState<string | null>(null);
   const [loading,    setLoading]    = useState(false);
   const [confirmed,  setConfirmed]  = useState(false); // email confirm sent
@@ -56,6 +58,10 @@ export default function SignUpScreen() {
   const handleSignUp = useCallback(async () => {
     if (!email.trim() || !password || !confirm) {
       setError('Please fill in all fields.');
+      return;
+    }
+    if (!agreed) {
+      setError('Please agree to the Terms of Service and Privacy Policy.');
       return;
     }
     if (password !== confirm) {
@@ -190,6 +196,27 @@ export default function SignUpScreen() {
               />
             </View>
 
+            {/* Agree to ToS + PP */}
+            <TouchableOpacity
+              style={s.checkboxRow}
+              onPress={() => setAgreed(v => !v)}
+              activeOpacity={0.7}
+            >
+              <View style={[s.checkbox, { borderColor: agreed ? colors.primary : colors.border, backgroundColor: agreed ? colors.primary : 'transparent' }]}>
+                {agreed && <Text style={s.checkboxTick}>✓</Text>}
+              </View>
+              <Text style={[s.checkboxLabel, { color: colors.textSecondary }]}>
+                {'I agree to the '}
+                <Text style={[s.checkboxLink, { color: colors.primary }]} onPress={() => Linking.openURL('https://headroombudget.com/terms')}>
+                  Terms of Service
+                </Text>
+                {' and '}
+                <Text style={[s.checkboxLink, { color: colors.primary }]} onPress={() => Linking.openURL('https://headroombudget.com/privacy')}>
+                  Privacy Policy
+                </Text>
+              </Text>
+            </TouchableOpacity>
+
             {/* Error */}
             {error && (
               <View style={s.errorBox}>
@@ -199,10 +226,10 @@ export default function SignUpScreen() {
 
             {/* Create Account button */}
             <TouchableOpacity
-              style={[s.primaryBtn, loading && s.primaryBtnDisabled]}
+              style={[s.primaryBtn, (!agreed || loading) && s.primaryBtnDisabled]}
               onPress={handleSignUp}
               activeOpacity={0.85}
-              disabled={loading}
+              disabled={!agreed || loading}
             >
               {loading
                 ? <ActivityIndicator color={colors.textInverse} />
@@ -288,6 +315,38 @@ const styles = (c: ReturnType<typeof useTheme>['colors']) => StyleSheet.create({
   passwordInput: { flex: 1 },
   eyeBtn:        { position: 'absolute', right: spacing[3] },
   eyeIcon:       { fontSize: typography.xs, fontWeight: typography.semibold as any, color: c.primary },
+
+  // Consent checkbox
+  checkboxRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing[3],
+    marginBottom: spacing[4],
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+    flexShrink: 0,
+  },
+  checkboxTick: {
+    fontSize: 12,
+    color: '#fff',
+    fontWeight: '700',
+    lineHeight: 14,
+  },
+  checkboxLabel: {
+    flex: 1,
+    fontSize: typography.sm,
+    lineHeight: 20,
+  },
+  checkboxLink: {
+    fontWeight: typography.semibold as any,
+  },
 
   // Error
   errorBox:  {

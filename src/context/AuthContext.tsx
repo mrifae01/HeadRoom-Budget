@@ -43,6 +43,10 @@ interface AuthContextValue {
     password: string,
   ) => Promise<{ error: string | null; needsConfirmation: boolean }>;
 
+  /** Version strings for the current legal docs — update when docs change. */
+  TOS_VERSION: string;
+  PRIVACY_VERSION: string;
+
   signOut: () => Promise<void>;
 }
 
@@ -55,6 +59,11 @@ export function useAuth(): AuthContextValue {
   if (!ctx) throw new Error('useAuth must be used inside <AuthProvider>');
   return ctx;
 }
+
+// ─── Legal doc versions — update these when PP or ToS content changes ─────────
+
+const TOS_VERSION     = '2026-04-02';
+const PRIVACY_VERSION = '2026-04-02';
 
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
@@ -91,10 +100,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     email: string,
     password: string,
   ): Promise<{ error: string | null; needsConfirmation: boolean }> => {
-    const { data, error } = await supabase.auth.signUp({ email, password });
+    const consentedAt = new Date().toISOString();
+
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        // Store consent atomically with user creation — survives even if the
+        // consents table insert below is skipped due to email confirmation.
+        data: {
+          tos_consented_at:  consentedAt,
+          tos_version:       TOS_VERSION,
+          privacy_version:   PRIVACY_VERSION,
+        },
+      },
+    });
+
+    // If the user is immediately authenticated (no email confirmation required),
+    // also write a queryable row to the consents table.
+    if (!error && data.session && data.user) {
+      await supabase.from('consents').insert({
+        user_id:         data.user.id,
+        consented_at:    consentedAt,
+        tos_version:     TOS_VERSION,
+        privacy_version: PRIVACY_VERSION,
+      });
+    }
+
     return {
-      error:               error?.message ?? null,
-      needsConfirmation:   !error && !data.session, // no session = email confirm required
+      error:             error?.message ?? null,
+      needsConfirmation: !error && !data.session,
     };
   }, []);
 
@@ -108,6 +143,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user: session?.user ?? null,
       isLoading,
       signIn, signUp, signOut,
+      TOS_VERSION,
+      PRIVACY_VERSION,
     }}>
       {children}
     </AuthContext.Provider>
