@@ -94,7 +94,7 @@ interface Message {
 const WELCOME: Message = {
   id: 'welcome',
   role: 'ai',
-  text: "Hi! I'm your AI budget advisor. I can see your income, categories, debts, and recent spending.\n\nTry asking me something like:\n• \"Trim my dining budget so I can save more\"\n• \"Help me pay off my car loan faster\"\n• \"Where am I overspending this month?\"",
+  text: "Hi! I'm your AI budget assistant. I can see your income, categories, debts, and recent spending.\n\nTry asking me something like:\n• \"Trim my dining budget so I can save more\"\n• \"Help me pay off my car loan faster\"\n• \"Where am I overspending this month?\"",
 };
 
 // ─── TypingIndicator ─────────────────────────────────────────────────────────
@@ -581,7 +581,7 @@ export default function AIAdvisorScreen() {
               <Text style={styles.headerAvatarText}>✦</Text>
             </View>
             <View>
-              <Text style={styles.headerTitle}>AI Advisor</Text>
+              <Text style={styles.headerTitle}>AI Assistant</Text>
               <Text style={styles.headerSubtitle}>Powered by Claude</Text>
             </View>
           </View>

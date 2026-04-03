@@ -117,7 +117,7 @@ export default function CapacityScreen() {
               <Text style={s.logoIcon}>✦</Text>
             </View>
             <Text style={s.appName}>HeadRoom</Text>
-            <Text style={s.tagline}>Your personal budget advisor</Text>
+            <Text style={s.tagline}>Your personal budget companion</Text>
           </View>
 
           {/* ── Card ── */}

@@ -184,7 +184,7 @@ function buildSystemPrompt(ctx) {
     ? recent.map(t => `  • ${t.date}  ${t.categoryName}  -$${t.amount}${t.note ? `  (${t.note})` : ''}`).join('\n')
     : '  • No transactions recorded yet';
 
-  return `You are a sharp, friendly personal finance advisor embedded in Headroom — a mobile budgeting app.
+  return `You are a sharp, friendly personal finance assistant embedded in Headroom — a mobile budgeting app.
 
 ════ USER'S BUDGET SNAPSHOT ════
 

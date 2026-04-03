@@ -28,13 +28,13 @@ const ICONS: Record<string, string> = {
   Dashboard:    '◉',
   Bank:         '🏦',
   Goals:        '🎯',
-  'AI Advisor': '✦',
+  'AI Assistant': '✦',
   Settings:     '☰',
 };
 
 // ─── Desktop layout ────────────────────────────────────────────────────────────
 
-const TABS = ['Setup', 'Dashboard', 'Bank', 'Goals', 'AI Advisor', 'Settings'] as const;
+const TABS = ['Setup', 'Dashboard', 'Bank', 'Goals', 'AI Assistant', 'Settings'] as const;
 type TabName = typeof TABS[number];
 
 const SCREEN_MAP: Record<TabName, React.ComponentType<any>> = {
@@ -42,7 +42,7 @@ const SCREEN_MAP: Record<TabName, React.ComponentType<any>> = {
   'Dashboard':  DashboardScreen,
   'Bank':       BankScreen,
   'Goals':      GoalsScreen,
-  'AI Advisor': AIAdvisorScreen,
+  'AI Assistant': AIAdvisorScreen,
   'Settings':   SettingsScreen,
 };
 
@@ -221,7 +221,7 @@ export default function TabNavigator() {
       <Tab.Screen name="Bank"        component={BankScreen}      />
       <Tab.Screen name="Goals"       component={GoalsScreen}     />
       <Tab.Screen
-        name="AI Advisor"
+        name="AI Assistant"
         component={AIAdvisorScreen}
         options={{ tabBarHideOnKeyboard: true }}
       />

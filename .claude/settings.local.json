@@ -3,7 +3,11 @@
     "allow": [
       "Bash(npm install:*)",
       "Bash(Test-Path \"C:\\\\Users\\\\mrifa\\\\OneDrive\\\\Desktop\\\\Repos\\\\HeadRoom_Official\\\\HeadRoom-Budget\\\\node_modules\\\\expo\\\\tsconfig.base.json\")",
-      "mcp__Claude_Preview__preview_start"
+      "mcp__Claude_Preview__preview_start",
+      "Bash(netstat -ano)",
+      "Bash(findstr :8081)",
+      "Bash(taskkill /PID 30532 /F)",
+      "Bash(cmd /c \"taskkill /PID 30532 /F\")"
     ]
   }
 }
