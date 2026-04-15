@@ -53,6 +53,7 @@ interface BankContextValue {
   justConnected:   boolean;
 
   connect:              (enrollment: TellerEnrollment) => Promise<void>;
+  reconnect:            ()                              => Promise<boolean>;
   disconnect:           ()                              => Promise<void>;
   refresh:              ()                              => Promise<void>;
   clearJustConnected:   ()                              => void;
@@ -148,6 +149,28 @@ export function BankProvider({ children }: { children: ReactNode }) {
     }
   }, [fetchAccounts, fetchTransactions]);
 
+  const reconnect = useCallback(async (): Promise<boolean> => {
+    setIsLoading(true);
+    try {
+      const res  = await authFetch('/api/teller/reconnect', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'Reconnect failed');
+
+      if (!data.reconnected) return false;
+
+      setInstitutionName(data.institutionName ?? null);
+      await fetchAccounts();
+      await fetchTransactions();
+      setJustConnected(true);
+      return true;
+    } catch (err) {
+      console.warn('[BankContext] reconnect failed:', err);
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [fetchAccounts, fetchTransactions]);
+
   const disconnect = useCallback(async (): Promise<void> => {
     setIsLoading(true);
     try {
@@ -190,6 +213,7 @@ export function BankProvider({ children }: { children: ReactNode }) {
       transactions,
       justConnected,
       connect,
+      reconnect,
       disconnect,
       refresh,
       clearJustConnected,

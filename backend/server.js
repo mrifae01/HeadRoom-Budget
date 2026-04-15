@@ -394,6 +394,7 @@ app.get('/api/teller/accounts', tellerLimiter, async (req, res) => {
       .from('teller_enrollments')
       .select('access_token, institution_name')
       .eq('user_id', userId)
+      .eq('is_active', true)
       .maybeSingle();
 
     if (error) throw error;
@@ -428,6 +429,7 @@ app.get('/api/teller/transactions', tellerLimiter, async (req, res) => {
       .from('teller_enrollments')
       .select('access_token')
       .eq('user_id', userId)
+      .eq('is_active', true)
       .maybeSingle();
 
     if (error) throw error;
@@ -469,7 +471,7 @@ app.delete('/api/teller/disconnect', expensiveLimiter, async (req, res) => {
 
     const { error } = await supabaseAdmin
       .from('teller_enrollments')
-      .delete()
+      .update({ is_active: false })
       .eq('user_id', userId);
 
     if (error) throw error;
@@ -478,6 +480,46 @@ app.delete('/api/teller/disconnect', expensiveLimiter, async (req, res) => {
   } catch (err) {
     console.error('[DELETE /api/teller/disconnect]', err?.message);
     res.status(500).json({ error: err?.message ?? 'Disconnect failed' });
+  }
+});
+
+/**
+ * POST /api/teller/reconnect
+ * If the user has a previously disconnected enrollment, verify the stored
+ * access token is still valid and reactivate it — no new Teller Connect needed.
+ * Returns { reconnected: true, institutionName } on success,
+ *         { reconnected: false } if no dormant enrollment exists.
+ */
+app.post('/api/teller/reconnect', expensiveLimiter, async (req, res) => {
+  try {
+    const userId = await getUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { data: enrollment, error } = await supabaseAdmin
+      .from('teller_enrollments')
+      .select('access_token, institution_name')
+      .eq('user_id', userId)
+      .eq('is_active', false)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!enrollment) return res.json({ reconnected: false });
+
+    // Verify the stored token still works with Teller
+    await tellerFetch('/accounts', enrollment.access_token);
+
+    const { error: updateErr } = await supabaseAdmin
+      .from('teller_enrollments')
+      .update({ is_active: true })
+      .eq('user_id', userId);
+
+    if (updateErr) throw updateErr;
+
+    res.json({ reconnected: true, institutionName: enrollment.institution_name });
+  } catch (err) {
+    // Token is expired/revoked — not an app error, just report not reconnected
+    console.warn('[POST /api/teller/reconnect]', err?.message);
+    res.json({ reconnected: false });
   }
 });
 
@@ -552,6 +594,7 @@ app.post('/api/bank/analyze', expensiveLimiter, async (req, res) => {
       .from('teller_enrollments')
       .select('access_token')
       .eq('user_id', userId)
+      .eq('is_active', true)
       .maybeSingle();
 
     if (dbErr) throw dbErr;

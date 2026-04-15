@@ -349,7 +349,7 @@ export default function BankScreen() {
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
-  const handleConnect = useCallback(() => {
+  const handleConnect = useCallback(async () => {
     if (isConnected) {
       Alert.alert(
         'One bank at a time',
@@ -358,6 +358,12 @@ export default function BankScreen() {
       );
       return;
     }
+
+    // Try to reactivate a previously disconnected enrollment before opening
+    // the Teller widget — avoids consuming a new development enrollment slot.
+    const didReconnect = await bank.reconnect();
+    if (didReconnect) return;
+
     openTeller(async (enrollment) => {
       try {
         await bank.connect(enrollment);
@@ -368,24 +374,29 @@ export default function BankScreen() {
   }, [openTeller, bank, isConnected, institutionName]);
 
   const handleDisconnect = useCallback(() => {
-    Alert.alert(
-      'Disconnect bank',
-      'This will remove your bank connection. Your imported transactions will remain.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Disconnect',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await bank.disconnect();
-            } catch {
-              Alert.alert('Error', 'Could not disconnect. Please try again.');
-            }
-          },
-        },
-      ],
-    );
+    const doDisconnect = async () => {
+      try {
+        await bank.disconnect();
+      } catch {
+        Alert.alert('Error', 'Could not disconnect. Please try again.');
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      // Alert.alert is unreliable on web (window.confirm is often blocked)
+      if (window.confirm('Disconnect your bank? Your imported transactions will remain.')) {
+        doDisconnect();
+      }
+    } else {
+      Alert.alert(
+        'Disconnect bank',
+        'This will remove your bank connection. Your imported transactions will remain.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Disconnect', style: 'destructive', onPress: doDisconnect },
+        ],
+      );
+    }
   }, [bank]);
 
   const handleImportPress = useCallback((tx: TellerTransaction) => {

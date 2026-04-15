@@ -25,6 +25,7 @@ import {
   StatusBar,
   Animated,
   Modal,
+  Platform,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -1496,14 +1497,20 @@ export default function DashboardScreen() {
   const closeModal = () => { setModalOpen(false); setEditingTransaction(null); };
 
   const handleDelete = (tx: Transaction) => {
-    Alert.alert(
-      'Delete Expense',
-      `Remove ${dollars(tx.amount)} from ${tx.categoryName}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => deleteTransaction(tx.id) },
-      ],
-    );
+    if (Platform.OS === 'web') {
+      if (window.confirm(`Remove ${dollars(tx.amount)} from ${tx.categoryName}?`)) {
+        deleteTransaction(tx.id);
+      }
+    } else {
+      Alert.alert(
+        'Delete Expense',
+        `Remove ${dollars(tx.amount)} from ${tx.categoryName}?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Delete', style: 'destructive', onPress: () => deleteTransaction(tx.id) },
+        ],
+      );
+    }
   };
 
   // ── Derived figures — all memoised ───────────────────────────────────────────

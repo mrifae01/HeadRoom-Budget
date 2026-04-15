@@ -10,7 +10,8 @@
       "Bash(cmd /c \"taskkill /PID 30532 /F\")",
       "WebFetch(domain:sentry.io)",
       "WebFetch(domain:teller.io)",
-      "WebFetch(domain:app.teller.io)"
+      "WebFetch(domain:app.teller.io)",
+      "Bash(npx kill-port:*)"
     ]
   }
 }
