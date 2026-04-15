@@ -44,3 +44,7 @@ yarn-error.*
 /.claude
 .claude/settings.local.json
 /supabase
+/.claude
+/.claude
+/.claude
+.claude/settings.local.json

@@ -10,16 +10,28 @@
  */
 
 require('dotenv').config();
+const Sentry    = require('@sentry/node');
 const express   = require('express');
 const cors      = require('cors');
+const { Agent: UndiciAgent } = require('undici');
 const rateLimit = require('express-rate-limit');
 const Anthropic = require('@anthropic-ai/sdk/index.js');
 const { createClient } = require('@supabase/supabase-js');
 const { Resend }       = require('resend');
 
+// ─── Sentry (must init before any other imports that may throw) ───────────────
+
+if (process.env.SENTRY_DSN) {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.NODE_ENV ?? 'production',
+    tracesSampleRate: 0.2,
+  });
+}
+
 // ─── Resend email client ──────────────────────────────────────────────────────
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 const FROM_EMAIL = 'HeadRoom <hello@headroombudget.com>';
 
 // ─── Supabase admin client (service role — never exposed to frontend) ──────────
@@ -31,14 +43,29 @@ const supabaseAdmin = createClient(
 
 // ─── Teller helpers ────────────────────────────────────────────────────────────
 
+// Decode base64 certificates from env vars (works locally and on Railway).
+// In development + production environments Teller requires mTLS — every request
+// to api.teller.io must present the client certificate issued by Teller.
+// Falls back to no dispatcher for sandbox (no cert required).
+const tellerDispatcher = (process.env.TELLER_CERT && process.env.TELLER_KEY)
+  ? new UndiciAgent({
+      connect: {
+        cert: Buffer.from(process.env.TELLER_CERT, 'base64').toString('utf8'),
+        key:  Buffer.from(process.env.TELLER_KEY,  'base64').toString('utf8'),
+      },
+    })
+  : undefined;
+
 function tellerAuth(accessToken) {
   return 'Basic ' + Buffer.from(accessToken + ':').toString('base64');
 }
 
 async function tellerFetch(path, accessToken) {
-  const res = await fetch(`https://api.teller.io${path}`, {
+  const options = {
     headers: { Authorization: tellerAuth(accessToken) },
-  });
+    ...(tellerDispatcher ? { dispatcher: tellerDispatcher } : {}),
+  };
+  const res = await fetch(`https://api.teller.io${path}`, options);
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new Error(`Teller ${path} → ${res.status}: ${body}`);
@@ -717,6 +744,7 @@ app.get('/admin/email/stats', adminLimiter, requireAdminKey, async (_req, res) =
  */
 app.post('/admin/email/waitlist', adminLimiter, requireAdminKey, async (req, res) => {
   try {
+    if (!resend) return res.status(503).json({ error: 'Email service not configured (missing RESEND_API_KEY).' });
     const { subject, message } = req.body;
     if (!subject?.trim() || !message?.trim()) {
       return res.status(400).json({ error: 'subject and message are required.' });
@@ -765,6 +793,7 @@ app.post('/admin/email/waitlist', adminLimiter, requireAdminKey, async (req, res
  */
 app.post('/admin/email/broadcast', adminLimiter, requireAdminKey, async (req, res) => {
   try {
+    if (!resend) return res.status(503).json({ error: 'Email service not configured (missing RESEND_API_KEY).' });
     const { subject, message } = req.body;
     if (!subject?.trim() || !message?.trim()) {
       return res.status(400).json({ error: 'subject and message are required.' });
@@ -805,6 +834,10 @@ app.post('/admin/email/broadcast', adminLimiter, requireAdminKey, async (req, re
 // ─── Health check (useful for deployment monitoring) ─────────────────────────
 
 app.get('/health', (_req, res) => res.json({ ok: true }));
+
+// ─── Sentry error handler (must be after all routes, before app.listen) ───────
+
+Sentry.setupExpressErrorHandler(app);
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 
