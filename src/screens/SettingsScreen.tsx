@@ -29,6 +29,7 @@ import { supabase } from '../config/supabase';
 import { API_BASE_URL } from '../config/api';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth }  from '../context/AuthContext';
+import { useIsDesktop } from '../hooks/useIsDesktop';
 import { typography, spacing, radius, shadows } from '../theme';
 
 // ─── Support links — update COFFEE_URL once your page is live ─────────────────
@@ -232,6 +233,7 @@ function FeedbackModal({ visible, onClose }: { visible: boolean; onClose: () => 
 export default function SettingsScreen() {
   const { colors, isDark, toggleDark } = useTheme();
   const { user, signOut } = useAuth();
+  const isDesktop = useIsDesktop();
 
   // Derive display values from the Supabase user object
   const email      = user?.email ?? '—';
@@ -307,15 +309,21 @@ export default function SettingsScreen() {
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
 
+      {/* Page header bar — matches other screens */}
+      <View style={[styles.pageBar, { backgroundColor: colors.surface, borderBottomColor: colors.border }, isDesktop && styles.pageBarDesktop]}>
+        <View style={styles.pageTitleBlock}>
+          <Text style={[styles.title, { color: colors.textPrimary }]}>Settings</Text>
+          <Text style={[styles.pageSubtitle, { color: colors.textMuted }]}>Account & preferences</Text>
+        </View>
+      </View>
+
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, isDesktop && styles.contentDesktop]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Page header */}
-        <View style={styles.header}>
-          <Text style={[styles.title, { color: colors.textPrimary }]}>Settings</Text>
-        </View>
+        {/* Desktop inner constraint */}
+        <View style={isDesktop ? styles.desktopInner : undefined}>
 
         {/* ── ACCOUNT ─────────────────────────────────────── */}
         <SectionLabel label="Account" />
@@ -435,14 +443,15 @@ export default function SettingsScreen() {
           }
         </TouchableOpacity>
 
-        {/* Footer */}
-        <View style={styles.footer}>
-          <Text style={[styles.footerText, { color: colors.textMuted }]}>
-            Headroom — Built to give your money room to breathe.
-          </Text>
-        </View>
+          {/* Footer */}
+          <View style={styles.footer}>
+            <Text style={[styles.footerText, { color: colors.textMuted }]}>
+              HeadRoom — Built to give your money room to breathe.
+            </Text>
+          </View>
 
-        <View style={{ height: spacing[8] }} />
+          <View style={{ height: spacing[8] }} />
+        </View>{/* end desktopInner */}
       </ScrollView>
       <FeedbackModal visible={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
     </SafeAreaView>
@@ -452,22 +461,44 @@ export default function SettingsScreen() {
 // ─── Styles (layout only — colors are inline) ─────────────────────────────────
 
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
+  safe:   { flex: 1 },
+  scroll: { flex: 1 },
+
+  // Page header bar
+  pageBar: {
+    paddingHorizontal: spacing[5],
+    paddingTop:        spacing[5],
+    paddingBottom:     spacing[3],
+    borderBottomWidth: 1,
   },
-  scroll: {
-    flex: 1,
+  pageBarDesktop: {
+    paddingHorizontal: spacing[8],
+    paddingTop:        spacing[6],
   },
+  pageTitleBlock: { gap: 2 },
+  title: {
+    fontSize:   typography['2xl'],
+    fontWeight: typography.bold,
+  },
+  pageSubtitle: {
+    fontSize:   typography.xs,
+    fontWeight: typography.medium,
+    marginTop:  2,
+  },
+
+  // Scroll content
   content: {
     paddingHorizontal: spacing[4],
-    paddingTop: spacing[6],
+    paddingTop:        spacing[4],
   },
-  header: {
-    marginBottom: spacing[2],
+  contentDesktop: {
+    paddingHorizontal: spacing[8],
+    paddingTop:        spacing[5],
   },
-  title: {
-    fontSize: typography['2xl'],
-    fontWeight: typography.bold,
+  desktopInner: {
+    maxWidth:  640,
+    width:     '100%' as any,
+    alignSelf: 'center' as const,
   },
   group: {
     marginHorizontal: 0,

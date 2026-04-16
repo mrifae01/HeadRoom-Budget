@@ -27,6 +27,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBudget } from '../context/BudgetContext';
 import { useTheme } from '../context/ThemeContext';
+import { useIsDesktop } from '../hooks/useIsDesktop';
 import { typography, spacing, radius, shadows } from '../theme';
 import { SavingsGoal } from '../types/budget';
 
@@ -51,8 +52,9 @@ function progressPct(goal: SavingsGoal): number {
 // ─── Sub-components ────────────────────────────────────────────────────────────
 
 function ProgressBar({ pct, color }: { pct: number; color: string }) {
+  const { colors } = useTheme();
   return (
-    <View style={{ height: 6, borderRadius: radius.full, backgroundColor: 'rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+    <View style={{ height: 6, borderRadius: radius.full, backgroundColor: colors.surfaceAlt, overflow: 'hidden' }}>
       <View style={{ height: 6, width: `${Math.round(pct * 100)}%`, borderRadius: radius.full, backgroundColor: color }} />
     </View>
   );
@@ -63,6 +65,7 @@ function ProgressBar({ pct, color }: { pct: number; color: string }) {
 export default function GoalsScreen() {
   const { colors } = useTheme();
   const insets     = useSafeAreaInsets();
+  const isDesktop  = useIsDesktop();
   const {
     budget,
     biweeklyEndPending,
@@ -105,7 +108,11 @@ export default function GoalsScreen() {
   const handleAddGoal = useCallback(async () => {
     const name   = newName.trim();
     const target = parseFloat(newTarget) || 0;
-    if (!name) { Alert.alert('Name required', 'Please give your goal a name.'); return; }
+    if (!name) {
+      if (Platform.OS === 'web') { window.alert('Please give your goal a name.'); }
+      else { Alert.alert('Name required', 'Please give your goal a name.'); }
+      return;
+    }
 
     await addGoal({ name, icon: newIcon, targetAmount: target, type: newType });
     setNewName('');
@@ -116,22 +123,38 @@ export default function GoalsScreen() {
   }, [newName, newIcon, newTarget, newType, addGoal]);
 
   const handleDeleteGoal = useCallback((goal: SavingsGoal) => {
-    Alert.alert(
-      `Delete "${goal.name}"?`,
-      goal.currentAmount > 0
-        ? `${fmt(goal.currentAmount)} will be returned to Potential Savings.`
-        : 'This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => deleteGoal(goal.id) },
-      ],
-    );
+    const confirmMsg = goal.currentAmount > 0
+      ? `Delete "${goal.name}"? ${fmt(goal.currentAmount)} will be returned to Potential Savings.`
+      : `Delete "${goal.name}"? This cannot be undone.`;
+
+    if (Platform.OS === 'web') {
+      if (window.confirm(confirmMsg)) deleteGoal(goal.id);
+    } else {
+      Alert.alert(
+        `Delete "${goal.name}"?`,
+        goal.currentAmount > 0
+          ? `${fmt(goal.currentAmount)} will be returned to Potential Savings.`
+          : 'This cannot be undone.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Delete', style: 'destructive', onPress: () => deleteGoal(goal.id) },
+        ],
+      );
+    }
   }, [deleteGoal]);
 
   const handleContribute = useCallback(async (goalId: string, amountStr: string) => {
     const amount = parseFloat(amountStr);
-    if (!amount || amount <= 0) { Alert.alert('Invalid amount', 'Enter a positive dollar amount.'); return; }
-    if (amount > savingsPool)   { Alert.alert('Not enough', `Your Potential Savings balance is ${fmt(savingsPool)}.`); return; }
+    if (!amount || amount <= 0) {
+      if (Platform.OS === 'web') { window.alert('Enter a positive dollar amount.'); }
+      else { Alert.alert('Invalid amount', 'Enter a positive dollar amount.'); }
+      return;
+    }
+    if (amount > savingsPool) {
+      if (Platform.OS === 'web') { window.alert(`Your Potential Savings balance is ${fmt(savingsPool)}.`); }
+      else { Alert.alert('Not enough', `Your Potential Savings balance is ${fmt(savingsPool)}.`); }
+      return;
+    }
 
     const updated = await contributeToGoal(goalId, amount);
     setAllocAmount((prev) => ({ ...prev, [goalId]: '' }));
@@ -187,20 +210,25 @@ export default function GoalsScreen() {
   }, [pendingSurplus, claimSurplusToPool, contributeToGoal]);
 
   // ── Styles (inline, theme-aware) ────────────────────────────────────────────
-  const s = makeStyles(colors);
+  const s = makeStyles(colors, isDesktop);
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
   const activeGoals    = savingsGoals.filter((g) => !g.completedAt);
   const completedGoals = savingsGoals.filter((g) => !!g.completedAt);
 
+  const totalSaved = savingsGoals.reduce((s, g) => s + g.currentAmount, 0);
+
   return (
     <View style={[s.root, { paddingTop: insets.top }]}>
       {/* ── Header ── */}
       <View style={s.header}>
-        <Text style={s.headerTitle}>Goals</Text>
+        <View style={s.headerText}>
+          <Text style={s.headerTitle}>Goals</Text>
+          <Text style={s.headerSub}>Track your savings progress</Text>
+        </View>
         <TouchableOpacity style={s.addBtn} onPress={() => setShowAddModal(true)}>
-          <Text style={s.addBtnText}>+ New</Text>
+          <Text style={s.addBtnText}>+ New Goal</Text>
         </TouchableOpacity>
       </View>
 
@@ -209,16 +237,33 @@ export default function GoalsScreen() {
         {/* ── Potential Savings pool card ── */}
         <View style={[s.poolCard, shadows.md]}>
           <View style={s.poolRow}>
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={s.poolLabel}>Potential Savings</Text>
               <Text style={s.poolBalance}>{fmt(savingsPool)}</Text>
-              <Text style={s.poolSub}>Unallocated surplus from past periods</Text>
+              <Text style={s.poolSub}>Unallocated surplus — ready to allocate</Text>
             </View>
-            <Text style={{ fontSize: 36 }}>🏦</Text>
+            <Text style={{ fontSize: 40 }}>🏦</Text>
+          </View>
+          {/* Stats row */}
+          <View style={s.poolStats}>
+            <View style={s.poolStat}>
+              <Text style={s.poolStatValue}>{savingsGoals.length}</Text>
+              <Text style={s.poolStatLabel}>Goals</Text>
+            </View>
+            <View style={[s.poolStatDivider]} />
+            <View style={s.poolStat}>
+              <Text style={s.poolStatValue}>{fmt(totalSaved)}</Text>
+              <Text style={s.poolStatLabel}>Total Saved</Text>
+            </View>
+            <View style={[s.poolStatDivider]} />
+            <View style={s.poolStat}>
+              <Text style={s.poolStatValue}>{activeGoals.length}</Text>
+              <Text style={s.poolStatLabel}>Active</Text>
+            </View>
           </View>
           {savingsPool > 0 && (
             <TouchableOpacity style={s.allocateBtn} onPress={() => setShowAllocateModal(true)}>
-              <Text style={s.allocateBtnText}>Allocate to Goals</Text>
+              <Text style={s.allocateBtnText}>Allocate to Goals →</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -226,15 +271,14 @@ export default function GoalsScreen() {
         {/* ── Active goals ── */}
         {activeGoals.length > 0 && (
           <>
-            <Text style={s.sectionLabel}>Active</Text>
-            {activeGoals.map((goal) => (
-              <GoalCard
-                key={goal.id}
-                goal={goal}
-                colors={colors}
-                onDelete={() => handleDeleteGoal(goal)}
-              />
-            ))}
+            <Text style={s.sectionLabel}>Active Goals</Text>
+            <View style={[s.goalGrid, isDesktop && s.goalGridDesktop]}>
+              {activeGoals.map((goal) => (
+                <View key={goal.id} style={[s.goalGridItem, isDesktop && s.goalGridItemDesktop]}>
+                  <GoalCard goal={goal} colors={colors} onDelete={() => handleDeleteGoal(goal)} />
+                </View>
+              ))}
+            </View>
           </>
         )}
 
@@ -242,27 +286,27 @@ export default function GoalsScreen() {
         {completedGoals.length > 0 && (
           <>
             <Text style={s.sectionLabel}>Completed</Text>
-            {completedGoals.map((goal) => (
-              <GoalCard
-                key={goal.id}
-                goal={goal}
-                colors={colors}
-                onDelete={() => handleDeleteGoal(goal)}
-                completed
-              />
-            ))}
+            <View style={[s.goalGrid, isDesktop && s.goalGridDesktop]}>
+              {completedGoals.map((goal) => (
+                <View key={goal.id} style={[s.goalGridItem, isDesktop && s.goalGridItemDesktop]}>
+                  <GoalCard goal={goal} colors={colors} onDelete={() => handleDeleteGoal(goal)} completed />
+                </View>
+              ))}
+            </View>
           </>
         )}
 
         {/* ── Empty state ── */}
         {savingsGoals.length === 0 && (
           <View style={s.empty}>
-            <Text style={{ fontSize: 48, marginBottom: spacing[3] }}>🎯</Text>
+            <Text style={{ fontSize: 52, marginBottom: spacing[3] }}>🎯</Text>
             <Text style={s.emptyTitle}>No goals yet</Text>
             <Text style={s.emptySub}>
-              Tap "+ New" to create a savings goal or a "saving for" want.
-              Surplus from each pay period will flow into Potential Savings for you to allocate.
+              Create a savings goal with a target amount, or a "saving for" want to stash surplus whenever you have it.
             </Text>
+            <TouchableOpacity style={[s.addBtn, { marginTop: spacing[4] }]} onPress={() => setShowAddModal(true)}>
+              <Text style={s.addBtnText}>+ Create your first goal</Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -551,88 +595,115 @@ function GoalCard({
   onDelete: () => void;
   completed?: boolean;
 }) {
-  const pct = progressPct(goal);
+  const pct       = progressPct(goal);
+  const accentCol = completed ? colors.accent : colors.primary;
 
   return (
     <View style={[gcStyles.card, { borderColor: colors.border, backgroundColor: colors.surface }, shadows.sm]}>
-      <View style={gcStyles.row}>
-        <Text style={{ fontSize: 32 }}>{goal.icon}</Text>
-        <View style={gcStyles.info}>
-          <View style={gcStyles.nameRow}>
+      {/* Left accent bar */}
+      <View style={[gcStyles.accentBar, { backgroundColor: accentCol }]} />
+
+      <View style={gcStyles.body}>
+        {/* Top row: icon + name + badges + delete */}
+        <View style={gcStyles.topRow}>
+          <Text style={{ fontSize: 26 }}>{goal.icon}</Text>
+          <View style={gcStyles.info}>
             <Text style={[gcStyles.name, { color: colors.textPrimary }]} numberOfLines={1}>
               {goal.name}
             </Text>
-            <View style={[gcStyles.typeBadge, { backgroundColor: goal.type === 'goal' ? colors.primaryLight : colors.accentLight }]}>
-              <Text style={[gcStyles.typeBadgeText, { color: goal.type === 'goal' ? colors.primary : colors.accentDark }]}>
-                {goal.type === 'goal' ? 'Goal' : 'Want'}
-              </Text>
+            <View style={gcStyles.badges}>
+              <View style={[gcStyles.badge, { backgroundColor: goal.type === 'goal' ? colors.primaryLight : colors.accentLight }]}>
+                <Text style={[gcStyles.badgeText, { color: goal.type === 'goal' ? colors.primary : colors.accentDark }]}>
+                  {goal.type === 'goal' ? '🎯 Goal' : '✨ Want'}
+                </Text>
+              </View>
+              {completed && (
+                <View style={[gcStyles.badge, { backgroundColor: colors.accentLight }]}>
+                  <Text style={[gcStyles.badgeText, { color: colors.accentDark }]}>✓ Done</Text>
+                </View>
+              )}
             </View>
-            {completed && (
-              <View style={[gcStyles.typeBadge, { backgroundColor: colors.accentLight, marginLeft: 4 }]}>
-                <Text style={[gcStyles.typeBadgeText, { color: colors.accentDark }]}>✓ Done</Text>
-              </View>
-            )}
           </View>
-
-          {goal.targetAmount > 0 ? (
-            <>
-              <Text style={[gcStyles.amounts, { color: colors.textSecondary }]}>
-                {fmt(goal.currentAmount)} / {fmt(goal.targetAmount)}
-                {'  '}
-                <Text style={{ color: colors.textMuted }}>{Math.round(pct * 100)}%</Text>
-              </Text>
-              <View style={{ marginTop: spacing[1] }}>
-                <ProgressBar pct={pct} color={completed ? colors.accent : colors.primary} />
-              </View>
-            </>
-          ) : (
-            <Text style={[gcStyles.amounts, { color: colors.textSecondary }]}>
-              {fmt(goal.currentAmount)} saved
-            </Text>
-          )}
+          <TouchableOpacity onPress={onDelete} hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+            <Text style={{ fontSize: 15, color: colors.textMuted }}>✕</Text>
+          </TouchableOpacity>
         </View>
 
-        <TouchableOpacity onPress={onDelete} hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}>
-          <Text style={{ fontSize: 16, color: colors.textMuted }}>✕</Text>
-        </TouchableOpacity>
+        {/* Progress section */}
+        {goal.targetAmount > 0 ? (
+          <View style={gcStyles.progressWrap}>
+            <View style={gcStyles.amountRow}>
+              <Text style={[gcStyles.currentAmt, { color: accentCol }]}>{fmt(goal.currentAmount)}</Text>
+              <Text style={[gcStyles.targetAmt, { color: colors.textMuted }]}>of {fmt(goal.targetAmount)}</Text>
+              <Text style={[gcStyles.pctText, { color: colors.textMuted }]}>{Math.round(pct * 100)}%</Text>
+            </View>
+            <ProgressBar pct={pct} color={accentCol} />
+          </View>
+        ) : (
+          <View style={gcStyles.amountRow}>
+            <Text style={[gcStyles.currentAmt, { color: accentCol }]}>{fmt(goal.currentAmount)}</Text>
+            <Text style={[gcStyles.targetAmt, { color: colors.textMuted }]}>saved · no target</Text>
+          </View>
+        )}
       </View>
     </View>
   );
 }
 
 const gcStyles = StyleSheet.create({
-  card:    { borderRadius: radius.lg, borderWidth: 1, padding: spacing[4], marginBottom: spacing[3] },
-  row:     { flexDirection: 'row', alignItems: 'flex-start', gap: spacing[3] },
-  info:    { flex: 1 },
-  nameRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginBottom: 2 },
-  name:    { fontSize: typography.base, fontWeight: typography.semibold, flexShrink: 1 },
-  amounts: { fontSize: typography.sm, marginTop: 2 },
-  typeBadge:     { paddingHorizontal: 6, paddingVertical: 2, borderRadius: radius.full },
-  typeBadgeText: { fontSize: typography.xs, fontWeight: typography.semibold },
+  card:      { borderRadius: radius.lg, borderWidth: 1, marginBottom: spacing[3], overflow: 'hidden', flexDirection: 'row' },
+  accentBar: { width: 4, borderTopLeftRadius: radius.lg, borderBottomLeftRadius: radius.lg },
+  body:      { flex: 1, padding: spacing[4], gap: spacing[3] },
+  topRow:    { flexDirection: 'row', alignItems: 'flex-start', gap: spacing[3] },
+  info:      { flex: 1, gap: 4 },
+  name:      { fontSize: typography.base, fontWeight: typography.semibold, flexShrink: 1 },
+  badges:    { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
+  badge:     { paddingHorizontal: 6, paddingVertical: 2, borderRadius: radius.full },
+  badgeText: { fontSize: typography.xs, fontWeight: typography.semibold },
+
+  progressWrap: { gap: spacing[2] },
+  amountRow:    { flexDirection: 'row', alignItems: 'baseline', gap: spacing[2] },
+  currentAmt:   { fontSize: typography.base, fontWeight: typography.bold },
+  targetAmt:    { fontSize: typography.xs },
+  pctText:      { fontSize: typography.xs, marginLeft: 'auto' as any },
 });
 
 // ─── Styles factory ────────────────────────────────────────────────────────────
 
-function makeStyles(colors: ReturnType<typeof useTheme>['colors']) {
+function makeStyles(colors: ReturnType<typeof useTheme>['colors'], isDesktop = false) {
+  const px = isDesktop ? spacing[8] : spacing[5];
   return StyleSheet.create({
     root:        { flex: 1, backgroundColor: colors.background },
-    header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing[5], paddingTop: spacing[6], paddingBottom: spacing[3] },
+    header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: px, paddingTop: isDesktop ? spacing[6] : spacing[5], paddingBottom: spacing[3] },
+    headerText:  { gap: 2 },
     headerTitle: { fontSize: typography['2xl'], fontWeight: typography.bold, color: colors.textPrimary },
+    headerSub:   { fontSize: typography.xs, color: colors.textMuted, fontWeight: typography.medium },
     addBtn:      { backgroundColor: colors.primary, paddingHorizontal: spacing[4], paddingVertical: spacing[2], borderRadius: radius.full },
-    addBtnText:  { color: '#fff', fontWeight: typography.semibold, fontSize: typography.sm },
+    addBtnText:  { color: colors.textInverse, fontWeight: typography.semibold, fontSize: typography.sm },
 
-    scroll:      { paddingHorizontal: spacing[5], paddingTop: spacing[2] },
+    scroll:      { paddingHorizontal: px, paddingTop: spacing[2] },
 
     // Pool card
-    poolCard:    { backgroundColor: colors.primary, borderRadius: radius.xl, padding: spacing[5], marginBottom: spacing[5] },
-    poolRow:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-    poolLabel:   { fontSize: typography.sm, fontWeight: typography.semibold, color: 'rgba(255,255,255,0.7)', marginBottom: 2 },
-    poolBalance: { fontSize: typography['3xl'], fontWeight: typography.bold, color: '#fff' },
-    poolSub:     { fontSize: typography.xs, color: 'rgba(255,255,255,0.6)', marginTop: 4 },
-    allocateBtn: { marginTop: spacing[4], backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: radius.lg, paddingVertical: spacing[3], alignItems: 'center' },
-    allocateBtnText: { color: '#fff', fontWeight: typography.semibold, fontSize: typography.base },
+    poolCard:         { backgroundColor: colors.primary, borderRadius: radius.xl, padding: spacing[5], marginBottom: spacing[5] },
+    poolRow:          { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: spacing[4] },
+    poolLabel:        { fontSize: typography.sm, fontWeight: typography.semibold, color: 'rgba(255,255,255,0.7)', marginBottom: 2 },
+    poolBalance:      { fontSize: typography['3xl'], fontWeight: typography.bold, color: '#fff' },
+    poolSub:          { fontSize: typography.xs, color: 'rgba(255,255,255,0.6)', marginTop: 4 },
+    poolStats:        { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: radius.lg, padding: spacing[3], marginBottom: spacing[4] },
+    poolStat:         { flex: 1, alignItems: 'center', gap: 2 },
+    poolStatValue:    { fontSize: typography.base, fontWeight: typography.bold, color: '#fff' },
+    poolStatLabel:    { fontSize: typography.xs, color: 'rgba(255,255,255,0.65)' },
+    poolStatDivider:  { width: 1, height: 28, backgroundColor: 'rgba(255,255,255,0.2)' },
+    allocateBtn:      { backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: radius.lg, paddingVertical: spacing[3], alignItems: 'center' },
+    allocateBtnText:  { color: '#fff', fontWeight: typography.semibold, fontSize: typography.sm },
 
     sectionLabel: { fontSize: typography.xs, fontWeight: typography.bold, color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: spacing[3], marginTop: spacing[2] },
+
+    // Goal grid
+    goalGrid:          {},
+    goalGridDesktop:   { flexDirection: 'row' as const, flexWrap: 'wrap' as const, gap: spacing[3] },
+    goalGridItem:      {},
+    goalGridItemDesktop: { width: '48%' as any },
 
     empty:      { alignItems: 'center', paddingTop: spacing[12], paddingHorizontal: spacing[8] },
     emptyTitle: { fontSize: typography.lg, fontWeight: typography.bold, color: colors.textPrimary, marginBottom: spacing[2] },
@@ -648,9 +719,9 @@ function makeStyles(colors: ReturnType<typeof useTheme>['colors']) {
 
     // Add goal form
     typeRow:     { flexDirection: 'row', gap: spacing[3], marginBottom: spacing[2] },
-    typePill:    { flex: 1, paddingVertical: spacing[3], alignItems: 'center', borderRadius: radius.lg, borderWidth: 1, borderColor: 'transparent', backgroundColor: '#F1F5F9' },
-    typePillText:{ fontSize: typography.sm, fontWeight: typography.semibold, color: '#475569' },
-    typeHint:    { fontSize: typography.xs, color: '#94A3B8', marginBottom: spacing[4] },
+    typePill:    { flex: 1, paddingVertical: spacing[3], alignItems: 'center', borderRadius: radius.lg, borderWidth: 1, borderColor: 'transparent', backgroundColor: colors.surfaceAlt },
+    typePillText:{ fontSize: typography.sm, fontWeight: typography.semibold, color: colors.textSecondary },
+    typeHint:    { fontSize: typography.xs, color: colors.textMuted, marginBottom: spacing[4] },
     emojiBtn:    { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: radius.md, borderWidth: 2, borderColor: 'transparent', marginRight: spacing[2] },
     fieldLabel:  { fontSize: typography.xs, fontWeight: typography.bold, color: colors.textMuted, letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: spacing[2], marginTop: spacing[4] },
     input:       { borderWidth: 1, borderRadius: radius.lg, padding: spacing[4], fontSize: typography.base, marginBottom: spacing[2] },
@@ -663,7 +734,7 @@ function makeStyles(colors: ReturnType<typeof useTheme>['colors']) {
     allocInputRow: { flexDirection: 'row', gap: spacing[2], alignItems: 'center' },
     allocInput:    { flex: 1, borderWidth: 1, borderRadius: radius.lg, paddingHorizontal: spacing[3], paddingVertical: spacing[2], fontSize: typography.base },
     contributeBtn: { paddingHorizontal: spacing[4], paddingVertical: spacing[2], borderRadius: radius.lg },
-    contributeBtnText: { color: '#fff', fontWeight: typography.semibold, fontSize: typography.sm },
+    contributeBtnText: { color: colors.textInverse, fontWeight: typography.semibold, fontSize: typography.sm },
     saveAllBtn:    { paddingHorizontal: spacing[3], paddingVertical: spacing[2], borderRadius: radius.lg, borderWidth: 1.5 },
     saveAllBtnText:{ fontWeight: typography.semibold, fontSize: typography.sm },
 
@@ -675,7 +746,7 @@ function makeStyles(colors: ReturnType<typeof useTheme>['colors']) {
 
     // Buttons
     primaryBtn:     { borderRadius: radius.lg, paddingVertical: spacing[4], alignItems: 'center' },
-    primaryBtnText: { color: '#fff', fontWeight: typography.bold, fontSize: typography.base },
+    primaryBtnText: { color: colors.textInverse, fontWeight: typography.bold, fontSize: typography.base },
     skipBtn:        { paddingVertical: spacing[3], alignItems: 'center', marginTop: spacing[2] },
     skipBtnText:    { fontSize: typography.sm },
 

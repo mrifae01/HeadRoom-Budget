@@ -8,10 +8,10 @@
  */
 
 export const lightColors = {
-  // Primary palette — blues
-  primary: '#2563EB',
-  primaryLight: '#DBEAFE',
-  primaryDark: '#1D4ED8',
+  // Primary palette — purple (matches logo gradient)
+  primary: '#7C3AED',
+  primaryLight: '#EDE9FE',
+  primaryDark: '#4338CA',
 
   // Accent palette — greens
   accent: '#10B981',
@@ -27,9 +27,9 @@ export const lightColors = {
   // Neutrals
   background: '#F8FAFC',
   surface: '#FFFFFF',
-  surfaceAlt: '#F1F5F9',
+  surfaceAlt: '#F5F3FF',
   border: '#E2E8F0',
-  borderFocus: '#93C5FD',
+  borderFocus: '#C4B5FD',
 
   // Text
   textPrimary: '#0F172A',
@@ -38,15 +38,15 @@ export const lightColors = {
   textInverse: '#FFFFFF',
 
   // Chat bubbles
-  bubbleUser: '#2563EB',
+  bubbleUser: '#7C3AED',
   bubbleAI: '#FFFFFF',
 };
 
 export const darkColors = {
-  // Primary palette — slightly brighter for dark backgrounds
-  primary: '#3B82F6',
-  primaryLight: '#1E3A5F',
-  primaryDark: '#2563EB',
+  // Primary palette — slightly brighter purple for dark backgrounds
+  primary: '#A78BFA',
+  primaryLight: '#2E1065',
+  primaryDark: '#7C3AED',
 
   // Accent palette
   accent: '#10B981',
@@ -60,11 +60,11 @@ export const darkColors = {
   warningLight: '#451A03',
 
   // Neutrals — inverted hierarchy
-  background: '#0F172A',   // deep navy — page bg
-  surface: '#1E293B',      // dark slate — cards
-  surfaceAlt: '#0F172A',   // same as bg — inputs recede into cards
-  border: '#334155',
-  borderFocus: '#3B82F6',
+  background: '#0F0A1E',   // deep purple-black — page bg
+  surface: '#1A1033',      // dark purple slate — cards
+  surfaceAlt: '#0F0A1E',   // same as bg — inputs recede into cards
+  border: '#2D1F52',
+  borderFocus: '#7C3AED',
 
   // Text
   textPrimary: '#F1F5F9',
@@ -73,8 +73,8 @@ export const darkColors = {
   textInverse: '#FFFFFF',
 
   // Chat bubbles
-  bubbleUser: '#2563EB',
-  bubbleAI: '#1E293B',
+  bubbleUser: '#7C3AED',
+  bubbleAI: '#1A1033',
 };
 
 /** Convenience alias — light palette (backward compat for any static imports) */

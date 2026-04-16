@@ -36,6 +36,7 @@ import StyledInput from '../components/StyledInput';
 import { useBudget } from '../context/BudgetContext';
 import { useBank } from '../context/BankContext';
 import BankAnalysisModal from '../components/BankAnalysisModal';
+import { useIsDesktop } from '../hooks/useIsDesktop';
 import { IncomeSource, IncomeType, DebtItem, CategoryItem } from '../types/budget';
 import { PRESET_CATEGORIES, PresetCategory } from '../data/categories';
 
@@ -1020,7 +1021,7 @@ function AddButton({ label, onPress }: { label: string; onPress: () => void }) {
 /** Possible states for the Save button */
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
-const createStyles = (c: Colors) => StyleSheet.create({
+const createStyles = (c: Colors, isDesktop = false) => StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: c.background,
@@ -1035,126 +1036,116 @@ const createStyles = (c: Colors) => StyleSheet.create({
     fontSize: typography.base,
     color: c.textSecondary,
   },
-  scroll: {
-    flex: 1,
+
+  // ── Top page header bar (matches other screens) ──
+  pageBar: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    justifyContent:    'space-between',
+    paddingHorizontal: isDesktop ? spacing[8] : spacing[5],
+    paddingTop:        isDesktop ? spacing[6] : spacing[5],
+    paddingBottom:     spacing[3],
+    backgroundColor:   c.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: c.border,
   },
+  pageTitleBlock: { gap: 2 },
+  pageTitle:      { fontSize: typography['2xl'], fontWeight: typography.bold, color: c.textPrimary },
+  pageSubtitle:   { fontSize: typography.xs, color: c.textMuted, fontWeight: typography.medium },
+
+  // Save button in header (desktop only)
+  headerSaveBtn: {
+    backgroundColor: c.primary,
+    borderRadius:    radius.full,
+    paddingHorizontal: spacing[5],
+    paddingVertical:   spacing[2],
+    ...shadows.sm,
+  },
+  headerSaveBtnSuccess: { backgroundColor: c.accent },
+  headerSaveBtnError:   { backgroundColor: c.danger },
+  headerSaveBtnText:    { fontSize: typography.sm, fontWeight: typography.bold, color: c.textInverse },
+
+  scroll:  { flex: 1 },
   content: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[6],
+    paddingHorizontal: isDesktop ? spacing[8] : spacing[5],
+    paddingTop:        spacing[5],
+    paddingBottom:     spacing[10],
   },
-  pageHeader: {
-    marginBottom: spacing[5],
-  },
-  pageTitle: {
-    fontSize: typography['2xl'],
-    fontWeight: typography.bold,
-    color: c.textPrimary,
-  },
-  pageSubtitle: {
-    fontSize: typography.sm,
-    color: c.textSecondary,
-    marginTop: spacing[1],
-    lineHeight: typography.sm * typography.relaxed,
-  },
+
+  // Desktop two-column layout
+  columns:  { flexDirection: 'row', gap: spacing[5], alignItems: 'flex-start' },
+  leftCol:  { flex: 1 },
+  rightCol: { flex: 1 },
+
+  // Bank analysis banner
   bankBanner: {
     flexDirection:  'row',
     alignItems:     'center',
-    borderRadius:   radius.lg,
-    borderWidth:    1.5,
+    borderRadius:   radius.xl,
+    borderWidth:    1,
     padding:        spacing[4],
     marginBottom:   spacing[5],
     gap:            spacing[3],
+    ...shadows.sm,
   },
-  bankBannerIcon: {
-    fontSize: 22,
+  bankBannerIconWrap: {
+    width:           40,
+    height:          40,
+    borderRadius:    radius.lg,
+    alignItems:      'center',
+    justifyContent:  'center',
+    backgroundColor: c.primary + '20',
   },
-  bankBannerText: {
-    flex: 1,
-    gap:  2,
-  },
-  bankBannerTitle: {
-    fontSize:   typography.sm,
-    fontWeight: typography.semibold,
-  },
-  bankBannerSub: {
-    fontSize: typography.xs,
-    opacity:  0.8,
-  },
-  bankBannerChevron: {
-    fontSize:   22,
-    lineHeight: 24,
-  },
-  section: {
-    marginBottom: spacing[4],
-  },
+  bankBannerIcon:    { fontSize: 20 },
+  bankBannerText:    { flex: 1, gap: 2 },
+  bankBannerTitle:   { fontSize: typography.sm, fontWeight: typography.semibold },
+  bankBannerSub:     { fontSize: typography.xs, opacity: 0.8 },
+  bankBannerPill:    { paddingHorizontal: spacing[3], paddingVertical: spacing[1], borderRadius: radius.full },
+  bankBannerPillText:{ fontSize: typography.xs, fontWeight: typography.semibold },
+
+  section: { marginBottom: spacing[4] },
+
+  // Mobile-only save button (bottom of scroll)
   saveButton: {
     backgroundColor: c.primary,
-    borderRadius: radius.lg,
+    borderRadius:    radius.lg,
     paddingVertical: spacing[4],
-    alignItems: 'center',
-    marginTop: spacing[2],
+    alignItems:      'center',
+    marginTop:       spacing[2],
     ...shadows.md,
   },
-  saveButtonSuccess: {
-    backgroundColor: c.accent,
-  },
-  saveButtonError: {
-    backgroundColor: c.danger,
-  },
+  saveButtonSuccess: { backgroundColor: c.accent },
+  saveButtonError:   { backgroundColor: c.danger },
   saveButtonText: {
-    fontSize: typography.base,
-    fontWeight: typography.bold,
-    color: c.textInverse,
+    fontSize:    typography.base,
+    fontWeight:  typography.bold,
+    color:       c.textInverse,
     letterSpacing: 0.3,
   },
   lastSaved: {
-    fontSize: typography.xs,
-    color: c.textMuted,
+    fontSize:  typography.xs,
+    color:     c.textMuted,
     textAlign: 'center',
     marginTop: spacing[2],
   },
-  simulateBtn: {
-    marginTop: spacing[5],
-    borderRadius: radius.lg,
-    paddingVertical: spacing[3],
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderStyle: 'dashed',
-    borderColor: c.warning,
-    backgroundColor: c.warningLight,
-  },
-  simulateBtnText: {
-    fontSize: typography.sm,
-    fontWeight: typography.semibold,
-    color: c.warning,
-  },
   periodRow: {
-    flexDirection: 'row',
+    flexDirection:   'row',
     backgroundColor: c.surfaceAlt,
-    borderRadius: radius.full,
-    padding: 3,
-    marginBottom: spacing[3],
-    borderWidth: 1,
-    borderColor: c.border,
+    borderRadius:    radius.full,
+    padding:         3,
+    marginBottom:    spacing[3],
+    borderWidth:     1,
+    borderColor:     c.border,
   },
   periodPill: {
-    flex: 1,
+    flex:            1,
     paddingVertical: spacing[1] + 1,
-    alignItems: 'center',
-    borderRadius: radius.full,
+    alignItems:      'center',
+    borderRadius:    radius.full,
   },
-  periodPillActive: {
-    backgroundColor: c.primary,
-  },
-  periodPillText: {
-    fontSize: typography.xs,
-    fontWeight: typography.semibold,
-    color: c.textSecondary,
-    letterSpacing: 0.3,
-  },
-  periodPillTextActive: {
-    color: c.textInverse,
-  },
+  periodPillActive:     { backgroundColor: c.primary },
+  periodPillText:       { fontSize: typography.xs, fontWeight: typography.semibold, color: c.textSecondary, letterSpacing: 0.3 },
+  periodPillTextActive: { color: c.textInverse },
 });
 
 export default function SetupScreen() {
@@ -1162,7 +1153,8 @@ export default function SetupScreen() {
   const { budget, isLoading, saveBudget/*, simulateMonthEnd*/ } = useBudget();
   const { isConnected: bankConnected } = useBank();
   const { colors, isDark } = useTheme();
-  const styles = useMemo(() => createStyles(colors), [colors]);
+  const isDesktop = useIsDesktop();
+  const styles = useMemo(() => createStyles(colors, isDesktop), [colors, isDesktop]);
 
   const [analysisVisible, setAnalysisVisible] = useState(false);
 
@@ -1281,190 +1273,221 @@ export default function SetupScreen() {
     );
   }
 
+  // ── Shared sections ───────────────────────────────────────────────────────────
+
+  const incomeSection = (
+    <Card style={styles.section}>
+      <SectionHeader
+        title="Income Sources"
+        subtitle={`${PERIOD_LABEL[incomePeriod].toLowerCase()} take-home`}
+        accentColor={colors.accent}
+      />
+      <View style={styles.periodRow}>
+        {SETUP_PERIOD_OPTIONS.map(({ key, label }) => (
+          <TouchableOpacity
+            key={key}
+            style={[styles.periodPill, incomePeriod === key && styles.periodPillActive]}
+            onPress={() => setIncomePeriod(key)}
+            activeOpacity={0.75}
+          >
+            <Text style={[styles.periodPillText, incomePeriod === key && styles.periodPillTextActive]}>
+              {label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      {incomeSources.map((source) => (
+        <IncomeCard
+          key={source.id}
+          source={source}
+          period={incomePeriod}
+          onChange={(updated) => updateIncome(source.id, updated)}
+          onRemove={() => removeIncome(source.id)}
+          canRemove={incomeSources.length > 1}
+        />
+      ))}
+      <AddButton label="Add Income Source" onPress={addIncome} />
+    </Card>
+  );
+
+  const debtSection = (
+    <Card style={styles.section}>
+      <SectionHeader
+        title="Debts"
+        subtitle="Monthly minimum payments"
+        accentColor={colors.danger}
+      />
+      {debts.map((d) => (
+        <DebtRow
+          key={d.id}
+          item={d}
+          onChange={(updated) => updateDebt(d.id, updated)}
+          onRemove={() => removeDebt(d.id)}
+        />
+      ))}
+      <AddButton label="Add Debt" onPress={addDebt} />
+    </Card>
+  );
+
+  const categorySection = (
+    <Card style={styles.section}>
+      <SectionHeader
+        title="Budget Categories"
+        subtitle={`${PERIOD_LABEL[catPeriod].toLowerCase()} spending limits`}
+        accentColor={colors.primary}
+      />
+      <View style={styles.periodRow}>
+        {SETUP_PERIOD_OPTIONS.map(({ key, label }) => (
+          <TouchableOpacity
+            key={key}
+            style={[styles.periodPill, catPeriod === key && styles.periodPillActive]}
+            onPress={() => setCatPeriod(key)}
+            activeOpacity={0.75}
+          >
+            <Text style={[styles.periodPillText, catPeriod === key && styles.periodPillTextActive]}>
+              {label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      {categories.map((c) => (
+        <CategoryRow
+          key={c.id}
+          item={c}
+          period={catPeriod}
+          usedNames={categories.filter((x) => x.id !== c.id).map((x) => x.name)}
+          onChange={(updated) => updateCategory(c.id, updated)}
+          onRemove={() => removeCategory(c.id)}
+        />
+      ))}
+      <AddButton label="Add Category" onPress={addCategory} />
+    </Card>
+  );
+
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
-      {/*
-        KeyboardAvoidingView sits between SafeAreaView and the ScrollView.
-        On iOS 'padding' adds bottom padding equal to the keyboard height so
-        the scroll area shrinks and the focused input is never hidden.
-        On Android the OS already resizes the window (adjustResize), so we
-        pass undefined and let the system handle it.
-      */}
+
+      {/* ── Page header bar ── */}
+      <View style={styles.pageBar}>
+        <View style={styles.pageTitleBlock}>
+          <Text style={styles.pageTitle}>Setup</Text>
+          <Text style={styles.pageSubtitle}>Income, categories & debts</Text>
+        </View>
+        {/* Save button lives in the header on desktop */}
+        {isDesktop && (
+          <TouchableOpacity
+            style={[
+              styles.headerSaveBtn,
+              saveState === 'saved'  && styles.headerSaveBtnSuccess,
+              saveState === 'error'  && styles.headerSaveBtnError,
+            ]}
+            onPress={handleSave}
+            activeOpacity={0.85}
+            disabled={saveState === 'saving'}
+          >
+            {saveState === 'saving'
+              ? <ActivityIndicator size="small" color={colors.textInverse} />
+              : <Text style={styles.headerSaveBtnText}>{saveButtonLabel}</Text>
+            }
+          </TouchableOpacity>
+        )}
+      </View>
+
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
       >
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-        automaticallyAdjustKeyboardInsets={true}
-      >
-
-        {/* ── Page header ── */}
-        <View style={styles.pageHeader}>
-          <Text style={styles.pageTitle}>Budget Setup</Text>
-          <Text style={styles.pageSubtitle}>
-            Configure your income sources, debts, and spending categories.
-          </Text>
-        </View>
-
-        {/* ── Bank analysis banner (shown when a bank is connected) ── */}
-        {bankConnected && (
-          <TouchableOpacity
-            onPress={() => setAnalysisVisible(true)}
-            style={[styles.bankBanner, { backgroundColor: colors.primaryLight, borderColor: colors.primary }]}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.bankBannerIcon}>🏦</Text>
-            <View style={styles.bankBannerText}>
-              <Text style={[styles.bankBannerTitle, { color: colors.primary }]}>
-                Bank connected
-              </Text>
-              <Text style={[styles.bankBannerSub, { color: colors.primary }]}>
-                Tap to analyze transactions and auto-fill your setup
-              </Text>
-            </View>
-            <Text style={[styles.bankBannerChevron, { color: colors.primary }]}>›</Text>
-          </TouchableOpacity>
-        )}
-
-        {/* ── Section 1: Income Sources ── */}
-        <Card style={styles.section}>
-          <SectionHeader
-            title="Income Sources"
-            subtitle={`Add every source of ${PERIOD_LABEL[incomePeriod].toLowerCase()} income`}
-            accentColor={colors.accent}
-          />
-          {/* Period pill selector */}
-          <View style={styles.periodRow}>
-            {SETUP_PERIOD_OPTIONS.map(({ key, label }) => (
-              <TouchableOpacity
-                key={key}
-                style={[styles.periodPill, incomePeriod === key && styles.periodPillActive]}
-                onPress={() => setIncomePeriod(key)}
-                activeOpacity={0.75}
-              >
-                <Text style={[styles.periodPillText, incomePeriod === key && styles.periodPillTextActive]}>
-                  {label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          {incomeSources.map((source) => (
-            <IncomeCard
-              key={source.id}
-              source={source}
-              period={incomePeriod}
-              onChange={(updated) => updateIncome(source.id, updated)}
-              onRemove={() => removeIncome(source.id)}
-              canRemove={incomeSources.length > 1}
-            />
-          ))}
-          <AddButton label="Add Income Source" onPress={addIncome} />
-        </Card>
-
-        {/* ── Section 2: Budget Categories ── */}
-        <Card style={styles.section}>
-          <SectionHeader
-            title="Budget Categories"
-            subtitle={`Set a ${PERIOD_LABEL[catPeriod].toLowerCase()} limit for each category`}
-            accentColor={colors.primary}
-          />
-          {/* Period pill selector */}
-          <View style={styles.periodRow}>
-            {SETUP_PERIOD_OPTIONS.map(({ key, label }) => (
-              <TouchableOpacity
-                key={key}
-                style={[styles.periodPill, catPeriod === key && styles.periodPillActive]}
-                onPress={() => setCatPeriod(key)}
-                activeOpacity={0.75}
-              >
-                <Text style={[styles.periodPillText, catPeriod === key && styles.periodPillTextActive]}>
-                  {label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          {categories.map((c) => (
-            <CategoryRow
-              key={c.id}
-              item={c}
-              period={catPeriod}
-              // Pass names from every OTHER row so the picker grays them out
-              usedNames={categories.filter((x) => x.id !== c.id).map((x) => x.name)}
-              onChange={(updated) => updateCategory(c.id, updated)}
-              onRemove={() => removeCategory(c.id)}
-            />
-          ))}
-          <AddButton label="Add Category" onPress={addCategory} />
-        </Card>
-
-        {/* ── Section 3: Debts ── */}
-        <Card style={styles.section}>
-          <SectionHeader
-            title="Debts"
-            subtitle="Monthly minimum payments"
-            accentColor={colors.danger}
-          />
-          {debts.map((d) => (
-            <DebtRow
-              key={d.id}
-              item={d}
-              onChange={(updated) => updateDebt(d.id, updated)}
-              onRemove={() => removeDebt(d.id)}
-            />
-          ))}
-          <AddButton label="Add Debt" onPress={addDebt} />
-        </Card>
-
-        {/* ── Save button ── */}
-        <TouchableOpacity
-          style={saveButtonStyle}
-          onPress={handleSave}
-          activeOpacity={0.85}
-          disabled={saveState === 'saving'}
-          accessibilityLabel="Save budget"
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          automaticallyAdjustKeyboardInsets={true}
         >
-          {saveState === 'saving' ? (
-            <ActivityIndicator color={colors.textInverse} />
-          ) : (
-            <Text style={styles.saveButtonText}>{saveButtonLabel}</Text>
+
+          {/* ── Bank analysis banner ── */}
+          {bankConnected && (
+            <TouchableOpacity
+              onPress={() => setAnalysisVisible(true)}
+              style={[styles.bankBanner, { backgroundColor: colors.primaryLight, borderColor: colors.borderFocus }]}
+              activeOpacity={0.85}
+            >
+              <View style={styles.bankBannerIconWrap}>
+                <Text style={styles.bankBannerIcon}>🏦</Text>
+              </View>
+              <View style={styles.bankBannerText}>
+                <Text style={[styles.bankBannerTitle, { color: colors.primary }]}>
+                  Auto-fill from bank
+                </Text>
+                <Text style={[styles.bankBannerSub, { color: colors.primary }]}>
+                  Analyze your transactions to suggest income & categories
+                </Text>
+              </View>
+              <View style={[styles.bankBannerPill, { backgroundColor: colors.primary }]}>
+                <Text style={[styles.bankBannerPillText, { color: '#fff' }]}>Analyze →</Text>
+              </View>
+            </TouchableOpacity>
           )}
-        </TouchableOpacity>
 
-        {/* ── Last saved timestamp ── */}
-        {budget.lastSaved && (
-          <Text style={styles.lastSaved}>
-            Last saved {formatLastSaved(budget.lastSaved)}
-          </Text>
-        )}
+          {/* ── Desktop: two-column layout ── */}
+          {isDesktop ? (
+            <View style={styles.columns}>
+              <View style={styles.leftCol}>
+                {incomeSection}
+                {debtSection}
+              </View>
+              <View style={styles.rightCol}>
+                {categorySection}
+                {budget.lastSaved && (
+                  <Text style={styles.lastSaved}>
+                    Last saved {formatLastSaved(budget.lastSaved)}
+                  </Text>
+                )}
+              </View>
+            </View>
+          ) : (
+            <>
+              {incomeSection}
+              {categorySection}
+              {debtSection}
 
-        {/* ── Dev: Simulate month end ── */}
-        {/* Commented out for production — uncomment to re-enable:
-        <TouchableOpacity
-          style={styles.simulateBtn}
-          onPress={simulateMonthEnd}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.simulateBtnText}>🧪 Simulate Month End</Text>
-        </TouchableOpacity>
-        */}
+              {/* Mobile save button */}
+              <TouchableOpacity
+                style={[
+                  styles.saveButton,
+                  saveState === 'saved' && styles.saveButtonSuccess,
+                  saveState === 'error' && styles.saveButtonError,
+                ]}
+                onPress={handleSave}
+                activeOpacity={0.85}
+                disabled={saveState === 'saving'}
+              >
+                {saveState === 'saving'
+                  ? <ActivityIndicator color={colors.textInverse} />
+                  : <Text style={styles.saveButtonText}>{saveButtonLabel}</Text>
+                }
+              </TouchableOpacity>
 
-        <View style={{ height: spacing[8] }} />
-      </ScrollView>
+              {budget.lastSaved && (
+                <Text style={styles.lastSaved}>
+                  Last saved {formatLastSaved(budget.lastSaved)}
+                </Text>
+              )}
+            </>
+          )}
+
+          <View style={{ height: spacing[6] }} />
+        </ScrollView>
       </KeyboardAvoidingView>
 
       <BankAnalysisModal
         visible={analysisVisible}
         onClose={() => setAnalysisVisible(false)}
       />
-
     </SafeAreaView>
   );
 }

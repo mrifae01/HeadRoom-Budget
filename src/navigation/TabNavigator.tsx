@@ -11,40 +11,84 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
-import { Text, View, TouchableOpacity, StyleSheet } from 'react-native';
+import { Text, View, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { typography, spacing, radius } from '../theme';
 import { useTheme } from '../context/ThemeContext';
 import { useIsDesktop } from '../hooks/useIsDesktop';
 
 import SetupScreen     from '../screens/SetupScreen';
 import DashboardScreen from '../screens/DashboardScreen';
+import BudgetScreen    from '../screens/BudgetScreen';
 import BankScreen      from '../screens/BankScreen';
 import AIAdvisorScreen from '../screens/AIAdvisorScreen';
 import SettingsScreen  from '../screens/SettingsScreen';
 import GoalsScreen     from '../screens/GoalsScreen';
 
 const ICONS: Record<string, string> = {
-  Setup:        '⚙',
-  Dashboard:    '◉',
-  Bank:         '🏦',
-  Goals:        '🎯',
+  Setup:          '⚙',
+  Dashboard:      '◉',
+  Budget:         '💰',
+  Bank:           '🏦',
+  Goals:          '🎯',
   'AI Assistant': '✦',
-  Settings:     '☰',
+  Settings:       '☰',
 };
+
+// Nav items split: main nav on left, utility items on right
+const MAIN_TABS:    TabName[] = ['Dashboard', 'Budget', 'Bank', 'Goals', 'AI Assistant'];
+const UTILITY_TABS: TabName[] = ['Setup', 'Settings'];
 
 // ─── Desktop layout ────────────────────────────────────────────────────────────
 
-const TABS = ['Setup', 'Dashboard', 'Bank', 'Goals', 'AI Assistant', 'Settings'] as const;
+const TABS = ['Dashboard', 'Budget', 'Bank', 'Goals', 'AI Assistant', 'Setup', 'Settings'] as const;
 type TabName = typeof TABS[number];
 
 const SCREEN_MAP: Record<TabName, React.ComponentType<any>> = {
-  'Setup':      SetupScreen,
-  'Dashboard':  DashboardScreen,
-  'Bank':       BankScreen,
-  'Goals':      GoalsScreen,
+  'Dashboard':    DashboardScreen,
+  'Budget':       BudgetScreen,
+  'Bank':         BankScreen,
+  'Goals':        GoalsScreen,
   'AI Assistant': AIAdvisorScreen,
-  'Settings':   SettingsScreen,
+  'Setup':        SetupScreen,
+  'Settings':     SettingsScreen,
 };
+
+function NavItem({ tab, active, onPress, colors }: {
+  tab: TabName;
+  active: boolean;
+  onPress: () => void;
+  colors: any;
+}) {
+  const [hovered, setHovered] = React.useState(false);
+
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      // @ts-ignore — web only hover events
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={[
+        desktop.navItem,
+        active && { backgroundColor: colors.primaryLight },
+        !active && hovered && { backgroundColor: colors.surfaceAlt },
+      ]}
+      accessibilityRole="button"
+      accessibilityLabel={tab}
+    >
+      <Text style={[desktop.navIcon, { opacity: active ? 1 : 0.6 }]}>{ICONS[tab]}</Text>
+      <Text style={[
+        desktop.navLabel,
+        {
+          color: active ? colors.primary : colors.textSecondary,
+          fontWeight: active ? typography.semibold : typography.regular,
+        },
+      ]}>
+        {tab}
+      </Text>
+      {active && <View style={[desktop.navUnderline, { backgroundColor: colors.primary }]} />}
+    </TouchableOpacity>
+  );
+}
 
 function DesktopLayout() {
   const [active, setActive] = React.useState<TabName>('Dashboard');
@@ -56,33 +100,56 @@ function DesktopLayout() {
       {/* Top nav bar */}
       <View style={[desktop.topBar, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
         <View style={desktop.topBarInner}>
-          <Text style={[desktop.logo, { color: colors.primary }]}>✦ HeadRoom</Text>
 
+          {/* Logo */}
+          <TouchableOpacity
+            onPress={() => setActive('Dashboard')}
+            style={desktop.logoWrapper}
+            accessibilityRole="button"
+            accessibilityLabel="Go to Dashboard"
+          >
+            <Image
+              source={require('../../assets/icon.png')}
+              style={desktop.logoMark}
+              resizeMode="contain"
+            />
+            <Text style={[desktop.logoText, { color: colors.textPrimary }]}>
+              Head<Text style={{ color: colors.primary }}>Room</Text>
+            </Text>
+          </TouchableOpacity>
+
+          {/* Divider */}
+          <View style={[desktop.divider, { backgroundColor: colors.border }]} />
+
+          {/* Main nav */}
           <View style={desktop.navItems}>
-            {TABS.map((tab) => {
-              const focused = tab === active;
-              return (
-                <TouchableOpacity
-                  key={tab}
-                  onPress={() => setActive(tab)}
-                  style={[desktop.navItem, focused && { backgroundColor: colors.primaryLight }]}
-                  accessibilityRole="button"
-                  accessibilityLabel={tab}
-                >
-                  <Text style={desktop.navIcon}>{ICONS[tab]}</Text>
-                  <Text style={[
-                    desktop.navLabel,
-                    {
-                      color: focused ? colors.primary : colors.textSecondary,
-                      fontWeight: focused ? typography.semibold : typography.regular,
-                    },
-                  ]}>
-                    {tab}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
+            {MAIN_TABS.map((tab) => (
+              <NavItem
+                key={tab}
+                tab={tab}
+                active={tab === active}
+                onPress={() => setActive(tab)}
+                colors={colors}
+              />
+            ))}
           </View>
+
+          {/* Spacer */}
+          <View style={{ flex: 1 }} />
+
+          {/* Utility nav */}
+          <View style={desktop.navItems}>
+            {UTILITY_TABS.map((tab) => (
+              <NavItem
+                key={tab}
+                tab={tab}
+                active={tab === active}
+                onPress={() => setActive(tab)}
+                colors={colors}
+              />
+            ))}
+          </View>
+
         </View>
       </View>
 
@@ -108,26 +175,47 @@ const desktop = StyleSheet.create({
   },
   topBar: {
     borderBottomWidth: 1,
+    // Subtle shadow under nav
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
+    zIndex: 10,
   },
   topBarInner: {
     flexDirection: 'row',
     alignItems: 'center',
-    maxWidth: 1200,
     width: '100%' as any,
-    alignSelf: 'center',
     paddingHorizontal: spacing[6],
-    height: 56,
-    gap: spacing[8],
+    height: 60,
+    gap: spacing[4],
   },
-  logo: {
+  logoWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    paddingRight: spacing[2],
+  },
+  logoMark: {
+    width: 28,
+    height: 28,
+    borderRadius: 7,
+  },
+  logoText: {
     fontSize: typography.md,
     fontWeight: typography.bold,
+    letterSpacing: -0.3,
+  },
+  divider: {
+    width: 1,
+    height: 24,
+    marginHorizontal: spacing[2],
   },
   navItems: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing[1],
-    flex: 1,
   },
   navItem: {
     flexDirection: 'row',
@@ -136,14 +224,21 @@ const desktop = StyleSheet.create({
     paddingVertical: spacing[2],
     paddingHorizontal: spacing[3],
     borderRadius: radius.md,
+    position: 'relative' as any,
   },
-  navIcon: { fontSize: 15 },
+  navUnderline: {
+    position: 'absolute' as any,
+    bottom: -1,
+    left: spacing[3],
+    right: spacing[3],
+    height: 2,
+    borderRadius: radius.full,
+  },
+  navIcon: { fontSize: 14 },
   navLabel: { fontSize: typography.sm },
   content: {
     flex: 1,
-    maxWidth: 1200,
     width: '100%' as any,
-    alignSelf: 'center',
   },
   screen: {
     flex: 1,
@@ -216,8 +311,8 @@ export default function TabNavigator() {
       tabBar={(props) => <MobileTabBar {...props} />}
       screenOptions={{ headerShown: false }}
     >
-      <Tab.Screen name="Setup"       component={SetupScreen}     />
       <Tab.Screen name="Dashboard"   component={DashboardScreen} />
+      <Tab.Screen name="Budget"      component={BudgetScreen}    />
       <Tab.Screen name="Bank"        component={BankScreen}      />
       <Tab.Screen name="Goals"       component={GoalsScreen}     />
       <Tab.Screen
@@ -225,6 +320,7 @@ export default function TabNavigator() {
         component={AIAdvisorScreen}
         options={{ tabBarHideOnKeyboard: true }}
       />
+      <Tab.Screen name="Setup"       component={SetupScreen}     />
       <Tab.Screen name="Settings"    component={SettingsScreen}  />
     </Tab.Navigator>
   );

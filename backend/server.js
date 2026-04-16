@@ -605,7 +605,7 @@ app.post('/api/bank/analyze', expensiveLimiter, async (req, res) => {
     const txArrays = await Promise.all(
       accounts.map(async (account) => {
         const txs = await tellerFetch(`/accounts/${account.id}/transactions`, enrollment.access_token);
-        return txs.map((tx) => ({ ...tx, accountName: account.name }));
+        return txs.map((tx) => ({ ...tx, accountName: account.name, accountType: account.type }));
       }),
     );
     const transactions = txArrays
@@ -615,10 +615,14 @@ app.post('/api/bank/analyze', expensiveLimiter, async (req, res) => {
 
     const txLines = transactions
       .map((t) => {
-        const amt    = parseFloat(t.amount);
-        const sign   = amt < 0 ? '-' : '+';
-        const name   = t.details?.counterparty?.name ?? t.description ?? '';
-        return `${t.date}  ${sign}$${Math.abs(amt).toFixed(2)}  ${name}  (${t.accountName})`;
+        const amt      = parseFloat(t.amount);
+        const isCreditCard = t.accountType === 'credit';
+        // Credit card: positive = spending (charge), negative = payment/refund
+        // Debit/checking: negative = spending, positive = income/deposit
+        const isSpending = isCreditCard ? amt > 0 : amt < 0;
+        const sign       = isSpending ? '-' : '+';
+        const name       = t.details?.counterparty?.name ?? t.description ?? '';
+        return `${t.date}  ${sign}$${Math.abs(amt).toFixed(2)}  ${name}  (${t.accountName}, ${isCreditCard ? 'credit card' : 'checking'})`;
       })
       .join('\n');
 

@@ -29,6 +29,7 @@ import { typography, spacing, radius, shadows } from '../theme';
 import { Colors } from '../theme';
 import { useTheme } from '../context/ThemeContext';
 import { useBudget } from '../context/BudgetContext';
+import { useIsDesktop } from '../hooks/useIsDesktop';
 import ProgressBar from '../components/ProgressBar';
 import { API_BASE_URL } from '../config/api';
 import { supabase } from '../config/supabase';
@@ -377,11 +378,16 @@ function MessageBubble({
 const createStyles = (c: Colors) => StyleSheet.create({
   safe:    { flex: 1, backgroundColor: c.background },
   flex:    { flex: 1 },
+  desktopColumn: {
+    maxWidth:  800,
+    width:     '100%' as any,
+    alignSelf: 'center' as const,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing[4],
+    paddingHorizontal: spacing[5],
     paddingVertical: spacing[3],
     backgroundColor: c.surface,
     borderBottomWidth: 1,
@@ -454,6 +460,7 @@ const createStyles = (c: Colors) => StyleSheet.create({
 export default function AIAdvisorScreen() {
   const { colors, isDark }   = useTheme();
   const { budget, applyAdjustments } = useBudget();
+  const isDesktop = useIsDesktop();
   const styles    = useMemo(() => createStyles(colors), [colors]);
   const scrollRef = useRef<ScrollView>(null);
 
@@ -574,6 +581,9 @@ export default function AIAdvisorScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={0}
       >
+        {/* Desktop: constrain chat to a centered column */}
+        <View style={[styles.flex, isDesktop && styles.desktopColumn]}>
+
         {/* ── Header ── */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
@@ -646,6 +656,8 @@ export default function AIAdvisorScreen() {
             </Text>
           </TouchableOpacity>
         </View>
+
+        </View>{/* end desktopColumn */}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );

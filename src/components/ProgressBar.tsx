@@ -9,7 +9,8 @@
 
 import React from 'react';
 import { View, StyleSheet, ViewStyle } from 'react-native';
-import { colors, radius } from '../theme';
+import { useTheme } from '../context/ThemeContext';
+import { radius } from '../theme';
 
 interface ProgressBarProps {
   progress: number;          // 0 to 1
@@ -21,22 +22,25 @@ interface ProgressBarProps {
 
 export default function ProgressBar({
   progress,
-  color = colors.primary,
+  color,
   height = 8,
-  trackColor = colors.surfaceAlt,
+  trackColor,
   style,
 }: ProgressBarProps) {
+  const { colors } = useTheme();
+  const fillColor  = color      ?? colors.primary;
+  const trackCol   = trackColor ?? colors.surfaceAlt;
   // Clamp progress to [0, 1]
   const pct = Math.min(Math.max(progress, 0), 1);
 
   return (
-    <View style={[styles.track, { height, backgroundColor: trackColor, borderRadius: height }, style]}>
+    <View style={[styles.track, { height, backgroundColor: trackCol, borderRadius: height }, style]}>
       <View
         style={[
           styles.fill,
           {
             width: `${pct * 100}%`,
-            backgroundColor: color,
+            backgroundColor: fillColor,
             height,
             borderRadius: height,
           },

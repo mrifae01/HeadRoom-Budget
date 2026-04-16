@@ -16,9 +16,12 @@ import React, {
   useCallback,
   ReactNode,
 } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../config/supabase';
 import { API_BASE_URL } from '../config/api';
 import { TellerAccount, TellerTransaction, TellerEnrollment } from '../types/teller';
+
+const CAT_OVERRIDES_KEY = '@headroom:bank_cat_overrides';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -45,18 +48,24 @@ async function authFetch(
 // ─── Context shape ────────────────────────────────────────────────────────────
 
 interface BankContextValue {
-  isConnected:     boolean;
-  isLoading:       boolean;
-  institutionName: string | null;
-  accounts:        TellerAccount[];
-  transactions:    TellerTransaction[];
-  justConnected:   boolean;
+  isConnected:       boolean;
+  isLoading:         boolean;
+  institutionName:   string | null;
+  accounts:          TellerAccount[];
+  transactions:      TellerTransaction[];
+  justConnected:     boolean;
+  /** txId → category key overrides set by the user */
+  categoryOverrides: Record<string, string>;
 
   connect:              (enrollment: TellerEnrollment) => Promise<void>;
   reconnect:            ()                              => Promise<boolean>;
   disconnect:           ()                              => Promise<void>;
   refresh:              ()                              => Promise<void>;
   clearJustConnected:   ()                              => void;
+  /** Persist a user-chosen category override for a transaction. */
+  setCategoryOverride:  (txId: string, catKey: string) => Promise<void>;
+  /** Remove a user override and revert to auto-resolve. */
+  clearCategoryOverride: (txId: string) => Promise<void>;
 }
 
 // ─── Context + hook ───────────────────────────────────────────────────────────
@@ -72,12 +81,23 @@ export function useBank(): BankContextValue {
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 export function BankProvider({ children }: { children: ReactNode }) {
-  const [isConnected,     setIsConnected]     = useState(false);
-  const [isLoading,       setIsLoading]       = useState(true);
-  const [institutionName, setInstitutionName] = useState<string | null>(null);
-  const [accounts,        setAccounts]        = useState<TellerAccount[]>([]);
-  const [transactions,    setTransactions]    = useState<TellerTransaction[]>([]);
-  const [justConnected,   setJustConnected]   = useState(false);
+  const [isConnected,       setIsConnected]       = useState(false);
+  const [isLoading,         setIsLoading]         = useState(true);
+  const [institutionName,   setInstitutionName]   = useState<string | null>(null);
+  const [accounts,          setAccounts]          = useState<TellerAccount[]>([]);
+  const [transactions,      setTransactions]      = useState<TellerTransaction[]>([]);
+  const [justConnected,     setJustConnected]     = useState(false);
+  const [categoryOverrides, setCategoryOverrides] = useState<Record<string, string>>({});
+
+  // ── Load persisted category overrides ─────────────────────────────────────
+
+  useEffect(() => {
+    AsyncStorage.getItem(CAT_OVERRIDES_KEY).then((raw) => {
+      if (raw) {
+        try { setCategoryOverrides(JSON.parse(raw)); } catch { /* ignore */ }
+      }
+    });
+  }, []);
 
   // ── Internal fetch helpers ─────────────────────────────────────────────────
 
@@ -194,6 +214,23 @@ export function BankProvider({ children }: { children: ReactNode }) {
     setJustConnected(false);
   }, []);
 
+  const setCategoryOverride = useCallback(async (txId: string, catKey: string): Promise<void> => {
+    setCategoryOverrides((prev) => {
+      const next = { ...prev, [txId]: catKey };
+      AsyncStorage.setItem(CAT_OVERRIDES_KEY, JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  }, []);
+
+  const clearCategoryOverride = useCallback(async (txId: string): Promise<void> => {
+    setCategoryOverrides((prev) => {
+      const next = { ...prev };
+      delete next[txId];
+      AsyncStorage.setItem(CAT_OVERRIDES_KEY, JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  }, []);
+
   const refresh = useCallback(async (): Promise<void> => {
     setIsLoading(true);
     try {
@@ -212,11 +249,14 @@ export function BankProvider({ children }: { children: ReactNode }) {
       accounts,
       transactions,
       justConnected,
+      categoryOverrides,
       connect,
       reconnect,
       disconnect,
       refresh,
       clearJustConnected,
+      setCategoryOverride,
+      clearCategoryOverride,
     }}>
       {children}
     </BankContext.Provider>

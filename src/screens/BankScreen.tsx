@@ -10,7 +10,7 @@
  * Teller Connect widget is web-only. Mobile shows an informational message.
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import {
   TouchableOpacity,
   Modal,
   FlatList,
+  TextInput,
   StyleSheet,
   ActivityIndicator,
   RefreshControl,
@@ -30,9 +31,12 @@ import { useBank }  from '../context/BankContext';
 import { useBudget } from '../context/BudgetContext';
 import { useTellerConnect } from '../hooks/useTellerConnect';
 import BankAnalysisModal from '../components/BankAnalysisModal';
+import { useIsDesktop } from '../hooks/useIsDesktop';
 import { typography, spacing, radius, shadows } from '../theme';
 import { TellerTransaction } from '../types/teller';
 import { CategoryItem } from '../types/budget';
+import { txSpendAmount, isTxSpending, isTxTransfer } from '../utils/teller';
+import { resolveDisplayCategory, DISPLAY_CATEGORIES, CategoryMeta } from '../utils/categoryMapper';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -61,7 +65,7 @@ function getDisplayName(tx: TellerTransaction): string {
 }
 
 function isDebit(tx: TellerTransaction): boolean {
-  return parseFloat(tx.amount) < 0;
+  return isTxSpending(tx);
 }
 
 // ─── Category picker modal ────────────────────────────────────────────────────
@@ -79,7 +83,7 @@ function ImportModal({ visible, tx, categories, onImport, onClose }: ImportModal
 
   if (!tx) return null;
 
-  const amount   = Math.abs(parseFloat(tx.amount));
+  const amount   = txSpendAmount(tx) || Math.abs(parseFloat(tx.amount));
   const name     = getDisplayName(tx);
 
   return (
@@ -240,44 +244,299 @@ const modal = StyleSheet.create({
   },
 });
 
+// ─── Remap category modal ────────────────────────────────────────────────────
+
+interface RemapModalProps {
+  visible:   boolean;
+  tx:        TellerTransaction | null;
+  overrides: Record<string, string>;
+  debts:     import('../types/budget').DebtItem[];
+  onSelect:  (txId: string, catKey: string) => void;
+  onClear:   (txId: string) => void;
+  onClose:   () => void;
+}
+
+function RemapModal({ visible, tx, overrides, debts, onSelect, onClear, onClose }: RemapModalProps) {
+  const { colors } = useTheme();
+  const [search,        setSearch]        = useState('');
+  const [showDebtPicker, setShowDebtPicker] = useState(false);
+
+  // Reset sub-state when modal closes/opens
+  useEffect(() => {
+    if (!visible) { setSearch(''); setShowDebtPicker(false); }
+  }, [visible]);
+
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase().trim();
+    if (!q) return DISPLAY_CATEGORIES;
+    return DISPLAY_CATEGORIES.filter(
+      (c) => c.name.toLowerCase().includes(q) || c.key.includes(q)
+    );
+  }, [search]);
+
+  if (!tx) return null;
+  const currentKey = overrides[tx.id] ?? null;
+  const name       = getDisplayName(tx);
+
+  // ── Debt sub-picker ────────────────────────────────────────────────────────
+  if (showDebtPicker) {
+    return (
+      <Modal visible={visible} animationType="slide" transparent onRequestClose={() => setShowDebtPicker(false)}>
+        <View style={remap.overlay}>
+          <View style={[remap.sheet, { backgroundColor: colors.surface }]}>
+            <View style={[remap.header, { borderBottomColor: colors.border }]}>
+              <TouchableOpacity onPress={() => setShowDebtPicker(false)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+                <Text style={{ fontSize: 20, color: colors.textMuted }}>←</Text>
+              </TouchableOpacity>
+              <View style={{ flex: 1, marginLeft: spacing[3] }}>
+                <Text style={[remap.title, { color: colors.textPrimary }]}>Which debt?</Text>
+                <Text style={[remap.sub, { color: colors.textMuted }]} numberOfLines={1}>{name}</Text>
+              </View>
+              <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+                <Text style={[remap.close, { color: colors.textMuted }]}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {debts.length === 0 ? (
+              <View style={{ padding: spacing[6] }}>
+                <Text style={{ color: colors.textMuted, fontSize: typography.sm, textAlign: 'center' }}>
+                  No debts set up yet.{'\n'}Add debts in Setup to tag payments here.
+                </Text>
+              </View>
+            ) : (
+              <FlatList
+                data={debts}
+                keyExtractor={(d) => d.id}
+                style={remap.list}
+                keyboardShouldPersistTaps="handled"
+                renderItem={({ item }) => {
+                  const debtKey  = `debt:${item.id}`;
+                  const isActive = currentKey === debtKey;
+                  const balance  = item.currentBalance
+                    ? `$${parseFloat(item.currentBalance).toLocaleString()} remaining`
+                    : item.totalAmount
+                    ? `$${parseFloat(item.totalAmount).toLocaleString()} total`
+                    : `$${parseFloat(item.amount).toLocaleString()}/mo`;
+                  return (
+                    <TouchableOpacity
+                      onPress={() => { onSelect(tx.id, debtKey); setShowDebtPicker(false); onClose(); }}
+                      style={[
+                        remap.catRow,
+                        { borderBottomColor: colors.border },
+                        isActive && { backgroundColor: colors.primaryLight },
+                      ]}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[remap.catIcon, { backgroundColor: '#DC262622' }]}>
+                        <Text style={{ fontSize: 16 }}>💳</Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[remap.catName, { color: isActive ? colors.primary : colors.textPrimary }]}>
+                          {item.name}
+                        </Text>
+                        <Text style={{ fontSize: typography.xs, color: colors.textMuted }}>{balance}</Text>
+                      </View>
+                      {isActive && <Text style={{ fontSize: 14, color: colors.primary }}>✓</Text>}
+                    </TouchableOpacity>
+                  );
+                }}
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
+    );
+  }
+
+  // ── Main category picker ───────────────────────────────────────────────────
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={remap.overlay}>
+        <View style={[remap.sheet, { backgroundColor: colors.surface }]}>
+
+          {/* Header */}
+          <View style={[remap.header, { borderBottomColor: colors.border }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[remap.title, { color: colors.textPrimary }]}>Change Category</Text>
+              <Text style={[remap.sub, { color: colors.textMuted }]} numberOfLines={1}>{name}</Text>
+            </View>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+              <Text style={[remap.close, { color: colors.textMuted }]}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Search */}
+          <View style={[remap.searchWrap, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
+            <Text style={{ fontSize: 14, color: colors.textMuted }}>🔍</Text>
+            <TextInput
+              style={[remap.searchInput, { color: colors.textPrimary }]}
+              placeholder="Search categories…"
+              placeholderTextColor={colors.textMuted}
+              value={search}
+              onChangeText={setSearch}
+              autoCorrect={false}
+            />
+          </View>
+
+          {/* Clear override row (only shown when there's a manual override) */}
+          {currentKey && (
+            <TouchableOpacity
+              style={[remap.clearRow, { borderBottomColor: colors.border }]}
+              onPress={() => { onClear(tx.id); onClose(); }}
+            >
+              <Text style={{ fontSize: 18 }}>↩️</Text>
+              <Text style={[remap.clearText, { color: colors.primary }]}>Reset to auto-detected</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Category list */}
+          <FlatList
+            data={filtered}
+            keyExtractor={(item) => item.key}
+            style={remap.list}
+            keyboardShouldPersistTaps="handled"
+            renderItem={({ item }) => {
+              // "Debt Payment" row drills into the debt sub-picker
+              if (item.key === 'debt_payment') {
+                const isDebtActive = currentKey?.startsWith('debt:');
+                return (
+                  <TouchableOpacity
+                    onPress={() => setShowDebtPicker(true)}
+                    style={[
+                      remap.catRow,
+                      { borderBottomColor: colors.border },
+                      isDebtActive && { backgroundColor: colors.primaryLight },
+                    ]}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[remap.catIcon, { backgroundColor: '#DC262622' }]}>
+                      <Text style={{ fontSize: 16 }}>💳</Text>
+                    </View>
+                    <Text style={[remap.catName, { color: isDebtActive ? colors.primary : colors.textPrimary }]}>
+                      Debt Payment
+                    </Text>
+                    <Text style={{ fontSize: 12, color: colors.textMuted }}>›</Text>
+                  </TouchableOpacity>
+                );
+              }
+
+              const isActive = item.key === currentKey;
+              return (
+                <TouchableOpacity
+                  onPress={() => { onSelect(tx.id, item.key); onClose(); setSearch(''); }}
+                  style={[
+                    remap.catRow,
+                    { borderBottomColor: colors.border },
+                    isActive && { backgroundColor: colors.primaryLight },
+                  ]}
+                  activeOpacity={0.7}
+                >
+                  <View style={[remap.catIcon, { backgroundColor: item.color + '22' }]}>
+                    <Text style={{ fontSize: 16 }}>{item.icon}</Text>
+                  </View>
+                  <Text style={[remap.catName, { color: isActive ? colors.primary : colors.textPrimary }]}>
+                    {item.name}
+                  </Text>
+                  {isActive && (
+                    <Text style={{ fontSize: 14, color: colors.primary }}>✓</Text>
+                  )}
+                </TouchableOpacity>
+              );
+            }}
+          />
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const remap = StyleSheet.create({
+  overlay:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  sheet:     { borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, maxHeight: '82%', paddingBottom: spacing[8] },
+  header:    { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing[5], paddingVertical: spacing[4], borderBottomWidth: 1, gap: spacing[3] },
+  title:     { fontSize: typography.base, fontWeight: typography.semibold },
+  sub:       { fontSize: typography.xs, marginTop: 2 },
+  close:     { fontSize: typography.lg },
+  searchWrap:{ flexDirection: 'row', alignItems: 'center', gap: spacing[2], margin: spacing[4], paddingHorizontal: spacing[3], paddingVertical: spacing[2], borderRadius: radius.lg, borderWidth: 1 },
+  searchInput:{ flex: 1, fontSize: typography.sm },
+  clearRow:  { flexDirection: 'row', alignItems: 'center', gap: spacing[3], paddingHorizontal: spacing[5], paddingVertical: spacing[3], borderBottomWidth: 1 },
+  clearText: { fontSize: typography.sm, fontWeight: typography.medium },
+  list:      { flexGrow: 0 },
+  catRow:    { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing[5], paddingVertical: spacing[3], borderBottomWidth: 1, gap: spacing[3] },
+  catIcon:   { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  catName:   { flex: 1, fontSize: typography.sm, fontWeight: typography.medium },
+});
+
 // ─── Transaction row ──────────────────────────────────────────────────────────
 
 interface TxRowProps {
-  tx:       TellerTransaction;
-  onImport: (tx: TellerTransaction) => void;
-  colors:   ReturnType<typeof useTheme>['colors'];
+  tx:              TellerTransaction;
+  overrides:       Record<string, string>;
+  debtNames:       Record<string, string>;
+  onImport:        (tx: TellerTransaction) => void;
+  onRemap:         (tx: TellerTransaction) => void;
+  colors:          ReturnType<typeof useTheme>['colors'];
 }
 
-function TxRow({ tx, onImport, colors }: TxRowProps) {
-  const amount    = parseFloat(tx.amount);
-  const debit     = amount < 0;
-  const absAmount = Math.abs(amount);
-  const name      = getDisplayName(tx);
+function TxRow({ tx, overrides, debtNames, onImport, onRemap, colors }: TxRowProps) {
+  const isTransfer = isTxTransfer(tx);
+  const catMeta    = resolveDisplayCategory(tx, overrides, debtNames);
+  const isManualTransfer = catMeta.key === 'transfer';
+  const excluded   = isTransfer || isManualTransfer;
+
+  const debit      = !excluded && isTxSpending(tx);
+  const absAmount  = debit ? txSpendAmount(tx) : Math.abs(parseFloat(tx.amount));
+  const name       = getDisplayName(tx);
+  const hasOverride = !!overrides[tx.id];
 
   return (
-    <View style={[row.container, { borderBottomColor: colors.border }]}>
+    <View style={[row.container, { borderBottomColor: colors.border, opacity: excluded ? 0.55 : 1 }]}>
+      {/* Category icon bubble */}
+      <TouchableOpacity
+        onPress={() => onRemap(tx)}
+        style={[row.iconBubble, { backgroundColor: catMeta.color + '22' }]}
+        activeOpacity={0.7}
+        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+      >
+        <Text style={row.iconEmoji}>{catMeta.icon}</Text>
+      </TouchableOpacity>
+
       <View style={row.left}>
-        <Text style={[row.name, { color: colors.textPrimary }]} numberOfLines={1}>
-          {name}
-        </Text>
+        <View style={row.nameRow}>
+          <Text style={[row.name, { color: colors.textPrimary }]} numberOfLines={1}>
+            {name}
+          </Text>
+          {hasOverride && (
+            <View style={[row.overrideBadge, { backgroundColor: colors.primaryLight }]}>
+              <Text style={[row.overrideBadgeText, { color: colors.primary }]}>edited</Text>
+            </View>
+          )}
+        </View>
         <Text style={[row.meta, { color: colors.textMuted }]}>
-          {fmtDate(tx.date)}  ·  {tx.accountName}
+          {fmtDate(tx.date)}  ·  {catMeta.name}  ·  {tx.accountName}
         </Text>
       </View>
 
       <View style={row.right}>
-        <Text style={[row.amount, { color: debit ? colors.danger : colors.accent }]}>
-          {debit ? '-' : '+'}{fmtCurrency(absAmount)}
-        </Text>
-
-        {debit && (
-          <TouchableOpacity
-            onPress={() => onImport(tx)}
-            style={[row.importBtn, { backgroundColor: colors.primaryLight }]}
-            activeOpacity={0.8}
-          >
-            <Text style={[row.importLabel, { color: colors.primary }]}>Import</Text>
-          </TouchableOpacity>
+        {excluded ? (
+          <View style={[row.transferBadge, { backgroundColor: colors.surfaceAlt }]}>
+            <Text style={[row.transferBadgeText, { color: colors.textMuted }]}>Transfer</Text>
+          </View>
+        ) : (
+          <>
+            <Text style={[row.amount, { color: debit ? colors.danger : colors.accent }]}>
+              {debit ? '-' : '+'}{fmtCurrency(absAmount)}
+            </Text>
+            {debit && (
+              <TouchableOpacity
+                onPress={() => onImport(tx)}
+                style={[row.importBtn, { backgroundColor: colors.primaryLight }]}
+                activeOpacity={0.8}
+              >
+                <Text style={[row.importLabel, { color: colors.primary }]}>Import</Text>
+              </TouchableOpacity>
+            )}
+          </>
         )}
       </View>
     </View>
@@ -292,6 +551,17 @@ const row = StyleSheet.create({
     paddingVertical:   spacing[3],
     borderBottomWidth: 1,
     gap:               spacing[3],
+  },
+  iconBubble: {
+    width:          40,
+    height:         40,
+    borderRadius:   20,
+    alignItems:     'center',
+    justifyContent: 'center',
+    flexShrink:     0,
+  },
+  iconEmoji: {
+    fontSize: 18,
   },
   left: {
     flex: 1,
@@ -321,6 +591,30 @@ const row = StyleSheet.create({
     fontSize:   typography.xs,
     fontWeight: typography.semibold,
   },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           spacing[2],
+    flexWrap:      'wrap' as const,
+  },
+  overrideBadge: {
+    paddingHorizontal: 6,
+    paddingVertical:   1,
+    borderRadius:      radius.full,
+  },
+  overrideBadgeText: {
+    fontSize:   typography.xs,
+    fontWeight: typography.medium,
+  },
+  transferBadge: {
+    paddingHorizontal: spacing[2],
+    paddingVertical:   spacing[1],
+    borderRadius:      radius.full,
+  },
+  transferBadgeText: {
+    fontSize:   typography.xs,
+    fontWeight: typography.medium,
+  },
 });
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
@@ -328,16 +622,28 @@ const row = StyleSheet.create({
 export default function BankScreen() {
   const { colors }           = useTheme();
   const insets               = useSafeAreaInsets();
+  const isDesktop            = useIsDesktop();
   const bank                 = useBank();
   const { budget, addTransaction } = useBudget();
   const { open: openTeller } = useTellerConnect();
 
   const [selectedTx,      setSelectedTx]      = useState<TellerTransaction | null>(null);
   const [modalVisible,    setModalVisible]    = useState(false);
+  const [remapTx,         setRemapTx]         = useState<TellerTransaction | null>(null);
+  const [remapVisible,    setRemapVisible]    = useState(false);
   const [refreshing,      setRefreshing]      = useState(false);
   const [analysisVisible, setAnalysisVisible] = useState(false);
 
-  const { isConnected, isLoading, institutionName, transactions, justConnected, clearJustConnected } = bank;
+  const {
+    isConnected, isLoading, institutionName, transactions, justConnected, clearJustConnected,
+    categoryOverrides, setCategoryOverride, clearCategoryOverride,
+  } = bank;
+
+  // Build debtId → name lookup for resolveDisplayCategory + RemapModal display
+  const debtNames = useMemo<Record<string, string>>(
+    () => Object.fromEntries(budget.debts.map((d) => [d.id, d.name])),
+    [budget.debts],
+  );
 
   // Auto-show analysis modal right after a fresh connection
   useEffect(() => {
@@ -351,11 +657,15 @@ export default function BankScreen() {
 
   const handleConnect = useCallback(async () => {
     if (isConnected) {
-      Alert.alert(
-        'One bank at a time',
-        `HeadRoom currently supports one connected bank. You're already linked to ${institutionName ?? 'a bank'}.\n\nTo connect a different bank, disconnect your current one first.`,
-        [{ text: 'Got it', style: 'cancel' }],
-      );
+      if (Platform.OS === 'web') {
+        window.alert(`HeadRoom currently supports one connected bank. You're already linked to ${institutionName ?? 'a bank'}. To connect a different bank, disconnect your current one first.`);
+      } else {
+        Alert.alert(
+          'One bank at a time',
+          `HeadRoom currently supports one connected bank. You're already linked to ${institutionName ?? 'a bank'}.\n\nTo connect a different bank, disconnect your current one first.`,
+          [{ text: 'Got it', style: 'cancel' }],
+        );
+      }
       return;
     }
 
@@ -368,7 +678,11 @@ export default function BankScreen() {
       try {
         await bank.connect(enrollment);
       } catch {
-        Alert.alert('Connection failed', 'Could not link your bank. Please try again.');
+        if (Platform.OS === 'web') {
+          window.alert('Could not link your bank. Please try again.');
+        } else {
+          Alert.alert('Connection failed', 'Could not link your bank. Please try again.');
+        }
       }
     });
   }, [openTeller, bank, isConnected, institutionName]);
@@ -404,9 +718,14 @@ export default function BankScreen() {
     setModalVisible(true);
   }, []);
 
+  const handleRemapPress = useCallback((tx: TellerTransaction) => {
+    setRemapTx(tx);
+    setRemapVisible(true);
+  }, []);
+
   const handleImport = useCallback(async (categoryName: string) => {
     if (!selectedTx) return;
-    const amount = Math.abs(parseFloat(selectedTx.amount));
+    const amount = txSpendAmount(selectedTx) || Math.abs(parseFloat(selectedTx.amount));
     await addTransaction({
       id:           simpleUuid(),
       categoryName,
@@ -441,11 +760,14 @@ export default function BankScreen() {
     return (
       <View style={[screen.root, { backgroundColor: colors.background, paddingTop: insets.top }]}>
         <ScrollView
-          contentContainerStyle={screen.notConnectedContent}
+          contentContainerStyle={[screen.notConnectedContent, isDesktop && screen.notConnectedContentDesktop]}
           showsVerticalScrollIndicator={false}
         >
-          {/* Page title */}
-          <Text style={[screen.pageTitle, { color: colors.textPrimary }]}>Bank</Text>
+          {/* Page header */}
+          <View style={screen.notConnectedHeader}>
+            <Text style={[screen.pageTitle, { color: colors.textPrimary, marginBottom: 0 }]}>Bank</Text>
+            <Text style={[screen.pageSubtitle, { color: colors.textMuted }]}>Connect to import transactions</Text>
+          </View>
 
           {/* Connect card */}
           <View style={[card.container, { backgroundColor: colors.surface, borderColor: colors.border }, shadows.md]}>
@@ -490,7 +812,7 @@ export default function BankScreen() {
     <View style={[screen.root, { backgroundColor: colors.background, paddingTop: insets.top }]}>
 
       {/* Header */}
-      <View style={[screen.header, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
+      <View style={[screen.header, { borderBottomColor: colors.border, backgroundColor: colors.surface }, isDesktop && screen.headerDesktop]}>
         <View style={screen.headerLeft}>
           <Text style={[screen.pageTitle, { color: colors.textPrimary, marginBottom: 0 }]}>Bank</Text>
           {/* Connected badge */}
@@ -523,6 +845,7 @@ export default function BankScreen() {
       {/* Transactions list */}
       <ScrollView
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={isDesktop ? screen.txListDesktop : undefined}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -539,14 +862,17 @@ export default function BankScreen() {
           </View>
         ) : (
           <>
-            <Text style={[txList.sectionLabel, { color: colors.textSecondary }]}>
+            <Text style={[txList.sectionLabel, { color: colors.textSecondary }, isDesktop && txList.sectionLabelDesktop]}>
               Recent Transactions
             </Text>
             {transactions.map((tx) => (
               <TxRow
                 key={tx.id}
                 tx={tx}
+                overrides={categoryOverrides}
+                debtNames={debtNames}
                 onImport={handleImportPress}
+                onRemap={handleRemapPress}
                 colors={colors}
               />
             ))}
@@ -562,6 +888,17 @@ export default function BankScreen() {
         categories={budget.categories}
         onImport={handleImport}
         onClose={() => { setModalVisible(false); setSelectedTx(null); }}
+      />
+
+      {/* Remap category modal */}
+      <RemapModal
+        visible={remapVisible}
+        tx={remapTx}
+        overrides={categoryOverrides}
+        debts={budget.debts}
+        onSelect={setCategoryOverride}
+        onClear={clearCategoryOverride}
+        onClose={() => { setRemapVisible(false); setRemapTx(null); }}
       />
 
       {/* Bank analysis modal */}
@@ -592,22 +929,41 @@ const screen = StyleSheet.create({
   notConnectedContent: {
     flexGrow:          1,
     paddingHorizontal: spacing[6],
+    paddingTop:        spacing[5],
     paddingBottom:     spacing[10],
   },
+  notConnectedContentDesktop: {
+    paddingHorizontal: spacing[8],
+    paddingTop:        spacing[6],
+    maxWidth:          640,
+    alignSelf:         'center' as const,
+    width:             '100%' as any,
+  },
+  notConnectedHeader: {
+    gap:          4,
+    marginBottom: spacing[5],
+  },
   pageTitle: {
-    fontSize:     typography.xl,
-    fontWeight:   typography.bold,
-    marginBottom: spacing[6],
-    marginTop:    spacing[4],
+    fontSize:   typography['2xl'],
+    fontWeight: typography.bold,
+    marginTop:  0,
+  },
+  pageSubtitle: {
+    fontSize:  typography.sm,
+    marginTop: 2,
   },
   header: {
     flexDirection:     'row',
     alignItems:        'center',
     justifyContent:    'space-between',
     paddingHorizontal: spacing[6],
-    paddingVertical:   spacing[4],
+    paddingVertical:   spacing[3],
     borderBottomWidth: 1,
     gap:               spacing[3],
+  },
+  headerDesktop: {
+    paddingHorizontal: spacing[8],
+    paddingVertical:   spacing[4],
   },
   headerLeft: {
     flex:      1,
@@ -651,6 +1007,9 @@ const screen = StyleSheet.create({
     fontSize:  typography.base,
     textAlign: 'center',
     lineHeight: typography.base * typography.relaxed,
+  },
+  txListDesktop: {
+    paddingHorizontal: spacing[2],
   },
 });
 
@@ -732,5 +1091,8 @@ const txList = StyleSheet.create({
     paddingHorizontal: spacing[6],
     paddingTop:        spacing[5],
     paddingBottom:     spacing[2],
+  },
+  sectionLabelDesktop: {
+    paddingHorizontal: spacing[8],
   },
 });
