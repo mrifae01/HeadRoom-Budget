@@ -101,7 +101,7 @@ const SLUG_MAP: Record<string, Omit<CategoryMeta, 'key'>> = {
   // Finance & Banking
   insurance:              { name: 'Insurance',         icon: '🛡️', color: '#64748B' },
   loan_payments:          { name: 'Loan Payment',      icon: '🏦', color: '#475569' },
-  debt_payment:           { name: 'Debt Payment',      icon: '💳', color: '#DC2626' },
+  debt_payment:           { name: 'Debt Payment',      icon: '💳', color: '#0891B2' },
   savings:                { name: 'Savings',           icon: '💰', color: '#15803D' },
   transfer:               { name: 'Transfer',          icon: '↔️', color: '#94A3B8' },
   investment:             { name: 'Investments',       icon: '📈', color: '#059669' },
@@ -380,7 +380,7 @@ export const DISPLAY_CATEGORIES: CategoryMeta[] = [
   { key: 'education',           name: 'Education',          icon: '🎓', color: '#B45309' },
   { key: 'charity',             name: 'Charity',            icon: '❤️', color: '#DC2626' },
   { key: 'income',              name: 'Income / Deposit',   icon: '💵', color: '#10B981' },
-  { key: 'debt_payment',        name: 'Debt Payment',        icon: '💳', color: '#DC2626' },
+  { key: 'debt_payment',        name: 'Debt Payment',        icon: '💳', color: '#0891B2' },
   { key: 'transfer',            name: 'Transfer (internal)', icon: '↔️', color: '#94A3B8' },
   { key: 'other',               name: 'Other / Misc',        icon: '📦', color: '#94A3B8' },
 ];
@@ -473,7 +473,7 @@ export function resolveDisplayCategory(
     if (overrideKey.startsWith('debt:')) {
       const debtId   = overrideKey.slice(5);
       const debtName = debtNames?.[debtId] ?? 'Debt Payment';
-      return { key: overrideKey, name: debtName, icon: '💳', color: '#DC2626' };
+      return { key: overrideKey, name: debtName, icon: '💳', color: '#0891B2' };
     }
     // Check DISPLAY_CATEGORIES (covers 'transfer', 'other', 'debt_payment', etc.)
     const found = DISPLAY_CATEGORIES.find((c) => c.key === overrideKey);

@@ -132,15 +132,48 @@ export function BankProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // ── Initial load ───────────────────────────────────────────────────────────
+  // ── Auth-aware initial load ────────────────────────────────────────────────
+  //
+  // BankProvider is mounted at the app root (outside RootNavigator), so it
+  // starts before the user is authenticated. A plain useEffect([], []) would
+  // fire with no JWT, get a 401, and never retry.
+  //
+  // Instead, subscribe to Supabase auth events:
+  //   INITIAL_SESSION / SIGNED_IN  → session is ready, fetch bank data
+  //   SIGNED_OUT                   → clear all bank state
+  //   TOKEN_REFRESHED              → token rotated, no re-fetch needed (data unchanged)
 
   useEffect(() => {
-    setIsLoading(true);
-    fetchAccounts()
-      .then(() => fetchTransactions())
-      .finally(() => setIsLoading(false));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    let didInit = false;
+
+    const load = async () => {
+      setIsLoading(true);
+      await fetchAccounts();
+      await fetchTransactions();
+      setIsLoading(false);
+    };
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && session) {
+        // Only fetch once per sign-in to avoid double-loading on token refresh
+        if (!didInit) {
+          didInit = true;
+          load();
+        }
+      }
+      if (event === 'SIGNED_OUT') {
+        didInit = false;
+        setIsConnected(false);
+        setInstitutionName(null);
+        setAccounts([]);
+        setTransactions([]);
+        setIsLoading(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  // fetchAccounts / fetchTransactions are stable useCallback refs — safe to include
+  }, [fetchAccounts, fetchTransactions]);
 
   // ── Public API ─────────────────────────────────────────────────────────────
 

@@ -327,7 +327,7 @@ function RemapModal({ visible, tx, overrides, debts, onSelect, onClear, onClose 
                       ]}
                       activeOpacity={0.7}
                     >
-                      <View style={[remap.catIcon, { backgroundColor: '#DC262622' }]}>
+                      <View style={[remap.catIcon, { backgroundColor: '#0891B222' }]}>
                         <Text style={{ fontSize: 16 }}>💳</Text>
                       </View>
                       <View style={{ flex: 1 }}>
@@ -409,7 +409,7 @@ function RemapModal({ visible, tx, overrides, debts, onSelect, onClear, onClose 
                     ]}
                     activeOpacity={0.7}
                   >
-                    <View style={[remap.catIcon, { backgroundColor: '#DC262622' }]}>
+                    <View style={[remap.catIcon, { backgroundColor: '#0891B222' }]}>
                       <Text style={{ fontSize: 16 }}>💳</Text>
                     </View>
                     <Text style={[remap.catName, { color: isDebtActive ? colors.primary : colors.textPrimary }]}>

@@ -11,14 +11,18 @@
  * Budget management (add/edit/delete expenses) lives in BudgetScreen.
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import {
   ScrollView,
   View,
   Text,
+  TextInput,
   StyleSheet,
   SafeAreaView,
   StatusBar,
+  TouchableOpacity,
+  Modal,
+  FlatList,
 } from 'react-native';
 import { typography, spacing, radius, shadows } from '../theme';
 import { Colors } from '../theme';
@@ -29,8 +33,9 @@ import { useBank } from '../context/BankContext';
 import { useIsDesktop } from '../hooks/useIsDesktop';
 import { CategoryItem } from '../types/budget';
 import { dollars, formatDate, isThisMonth } from '../utils/formatters';
+import { TellerTransaction } from '../types/teller';
 import { txSpendAmount, isTxSpending, isTxIncome, isTxTransfer } from '../utils/teller';
-import { resolveTxCategory, resolveDisplayCategory, OTHER_META } from '../utils/categoryMapper';
+import { resolveTxCategory, resolveDisplayCategory, DISPLAY_CATEGORIES, OTHER_META } from '../utils/categoryMapper';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -183,23 +188,33 @@ function InsightCard({ type, text, colors }: {
 // ─── CategoryBar ──────────────────────────────────────────────────────────────
 
 const createBarStyles = (c: Colors) => StyleSheet.create({
-  row:     { flexDirection: 'row', alignItems: 'center', gap: spacing[3], paddingVertical: spacing[2] },
-  iconWrap:{ width: 28, height: 28, borderRadius: 7, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  icon:    { fontSize: 13 },
-  info:    { flex: 1 },
-  nameRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 },
-  name:    { fontSize: typography.sm, fontWeight: typography.medium, color: c.textPrimary },
-  amount:  { fontSize: typography.xs, fontWeight: typography.semibold, color: c.textSecondary },
-  track:   { height: 6, borderRadius: radius.full, backgroundColor: c.surfaceAlt, overflow: 'hidden' as const },
-  fill:    { height: '100%' as unknown as number, borderRadius: radius.full },
+  row:         { flexDirection: 'row', alignItems: 'center', gap: spacing[3], paddingVertical: spacing[2] },
+  iconWrap:    { width: 28, height: 28, borderRadius: 7, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  icon:        { fontSize: 13 },
+  info:        { flex: 1 },
+  nameRow:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  nameLeft:    { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing[2] },
+  name:        { fontSize: typography.sm, fontWeight: typography.medium, color: c.textPrimary },
+  right:       { flexDirection: 'row', alignItems: 'center', gap: spacing[2] },
+  amount:      { fontSize: typography.xs, fontWeight: typography.semibold, color: c.textSecondary },
+  chevronPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    paddingHorizontal: spacing[2], paddingVertical: 3,
+    borderRadius: radius.full, borderWidth: 1,
+  },
+  chevronText: { fontSize: typography.xs, fontWeight: typography.bold },
+  track:       { height: 6, borderRadius: radius.full, backgroundColor: c.surfaceAlt, overflow: 'hidden' as const },
+  fill:        { height: '100%' as unknown as number, borderRadius: radius.full },
 });
 
-function CategoryBar({ icon, name, color, spent, maxSpent }: {
+function CategoryBar({ icon, name, color, spent, maxSpent, tappable, isExpanded }: {
   icon: string; name: string; color: string; spent: number; maxSpent: number;
+  tappable?: boolean; isExpanded?: boolean;
 }) {
   const { colors } = useTheme();
   const s = useMemo(() => createBarStyles(colors), [colors]);
   const pct = maxSpent > 0 ? (spent / maxSpent) * 100 : 0;
+
   return (
     <View style={s.row}>
       <View style={[s.iconWrap, { backgroundColor: color + '22' }]}>
@@ -207,8 +222,27 @@ function CategoryBar({ icon, name, color, spent, maxSpent }: {
       </View>
       <View style={s.info}>
         <View style={s.nameRow}>
-          <Text style={s.name} numberOfLines={1}>{name}</Text>
-          <Text style={s.amount}>{dollars(spent)}</Text>
+          <View style={s.nameLeft}>
+            <Text style={s.name} numberOfLines={1}>{name}</Text>
+          </View>
+          <View style={s.right}>
+            <Text style={s.amount}>{dollars(spent)}</Text>
+            {tappable && (
+              <View style={[
+                s.chevronPill,
+                isExpanded
+                  ? { backgroundColor: colors.primary, borderColor: colors.primary }
+                  : { backgroundColor: colors.surfaceAlt, borderColor: colors.border },
+              ]}>
+                <Text style={[
+                  s.chevronText,
+                  { color: isExpanded ? '#fff' : colors.textSecondary },
+                ]}>
+                  {isExpanded ? '▲ Hide' : '▼ Show'}
+                </Text>
+              </View>
+            )}
+          </View>
         </View>
         <View style={s.track}>
           <View style={[s.fill, { width: `${pct}%` as unknown as number, backgroundColor: color }]} />
@@ -286,6 +320,28 @@ const createStyles = (c: Colors) => StyleSheet.create({
   columns: { flexDirection: 'row', gap: spacing[5], alignItems: 'flex-start' },
   leftCol: { flex: 3 },
   rightCol:{ flex: 2 },
+
+  // Month filter pills
+  monthPillScroll: { marginBottom: spacing[4] },
+  monthPillRow:    { gap: spacing[2], paddingHorizontal: 2, flexDirection: 'row' },
+  monthPill:       { paddingHorizontal: spacing[3], paddingVertical: spacing[1] + 2, borderRadius: radius.full },
+  monthPillText:   { fontSize: typography.xs, fontWeight: typography.semibold },
+
+  // Inline drill-down panel
+  drillPanel:      { marginTop: spacing[1], marginBottom: spacing[2], borderRadius: radius.md, overflow: 'hidden' as const },
+  drillTotalRow:   { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing[3], paddingVertical: spacing[2], gap: spacing[2] },
+  drillTotalLabel: { fontSize: typography.xs, fontWeight: typography.medium, flex: 1 },
+  drillTotalAmt:   { fontSize: typography.sm, fontWeight: typography.bold },
+  drillTxRow:      { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing[3], paddingVertical: spacing[2] + 1, gap: spacing[2] },
+  drillTxLeft:     { flex: 1, gap: 1 },
+  drillTxName:     { fontSize: typography.sm, fontWeight: typography.medium },
+  drillTxMeta:     { fontSize: typography.xs },
+  drillTxRight:    { alignItems: 'flex-end', gap: spacing[1] },
+  drillTxAmt:      { fontSize: typography.sm, fontWeight: typography.semibold },
+  drillRemapBtn:   { paddingHorizontal: spacing[2], paddingVertical: 2, borderRadius: radius.full, borderWidth: 1 },
+  drillRemapText:  { fontSize: typography.xs, fontWeight: typography.semibold },
+  drillSep:        { height: 1, marginLeft: spacing[3] },
+  drillEmpty:      { paddingVertical: spacing[3], paddingHorizontal: spacing[3], fontSize: typography.xs },
 });
 
 // ─── DashboardScreen ──────────────────────────────────────────────────────────
@@ -297,6 +353,8 @@ export default function DashboardScreen() {
     transactions: bankTx,
     institutionName,
     categoryOverrides,
+    setCategoryOverride,
+    clearCategoryOverride,
   } = useBank();
   const isDesktop             = useIsDesktop();
   const { colors, isDark }    = useTheme();
@@ -308,6 +366,37 @@ export default function DashboardScreen() {
     () => Object.fromEntries(budget.debts.map((d) => [d.id, d.name])),
     [budget.debts],
   );
+
+  // ── Month filter state ────────────────────────────────────────────────────
+  // selectedMonthKey = "YYYY-MM" string; null = current month
+  const [selectedMonthKey, setSelectedMonthKey] = useState<string | null>(null);
+
+  // Inline category expansion + reclassify state
+  const [expandedCategoryKey, setExpandedCategoryKey] = useState<string | null>(null);
+  const [remapTx, setRemapTx] = useState<TellerTransaction | null>(null);
+
+  // Build the list of available months from bank transactions (up to 6, newest first)
+  const availableMonths = useMemo<Array<{ key: string; label: string }>>(() => {
+    if (!bankIsConnected || bankTx.length === 0) return [];
+    const seen = new Set<string>();
+    for (const tx of bankTx) {
+      const [y, m] = tx.date.split('-');
+      seen.add(`${y}-${m}`);
+    }
+    return Array.from(seen)
+      .sort((a, b) => b.localeCompare(a))
+      .slice(0, 6)
+      .map((key) => {
+        const [y, m] = key.split('-');
+        const d = new Date(parseInt(y), parseInt(m) - 1, 1);
+        const label = d.toLocaleString(undefined, { month: 'short', year: 'numeric' });
+        return { key, label };
+      });
+  }, [bankIsConnected, bankTx]);
+
+  // Resolved selected month (default to most recent available)
+  const activeMonthKey = selectedMonthKey ?? availableMonths[0]?.key ?? null;
+  const activeMonthLabel = availableMonths.find((m) => m.key === activeMonthKey)?.label ?? MONTH_LABEL;
 
   // ── Budget-derived data (manually imported transactions) ───────────────────
 
@@ -348,20 +437,25 @@ export default function DashboardScreen() {
     for (const tx of categoryTx) map[tx.categoryName] = (map[tx.categoryName] ?? 0) + tx.amount;
     return Object.entries(map).map(([name, amount]) => {
       const cat = allCategories.find((c) => c.name === name) ?? { icon: '📦', color: '#94A3B8' };
-      return { name, amount, icon: cat.icon, color: cat.color };
+      return { key: name, name, amount, icon: cat.icon, color: cat.color };
     }).sort((a, b) => b.amount - a.amount);
   }, [categoryTx, allCategories]);
 
   // ── Bank-derived data ──────────────────────────────────────────────────────
 
-  // Group bank spending transactions by Teller category (credit-card aware)
+  // Group bank spending transactions by category for the selected month
   const bankCategorySpend = useMemo(() => {
     if (!bankIsConnected || bankTx.length === 0) return [];
     const map: Record<string, { total: number; meta: ReturnType<typeof resolveTxCategory> }> = {};
     for (const tx of bankTx) {
-      if (isTxTransfer(tx)) continue;                          // skip internal transfers
+      // Month filter
+      if (activeMonthKey) {
+        const [y, m] = tx.date.split('-');
+        if (`${y}-${m}` !== activeMonthKey) continue;
+      }
+      if (isTxTransfer(tx)) continue;
       const overriddenMeta = resolveDisplayCategory(tx, categoryOverrides, debtNames);
-      if (overriddenMeta.key === 'transfer') continue;         // user manually marked as transfer
+      if (overriddenMeta.key === 'transfer') continue;
       const spend = txSpendAmount(tx);
       if (spend === 0) continue;
       const key = overriddenMeta.key;
@@ -371,8 +465,26 @@ export default function DashboardScreen() {
     return Object.entries(map)
       .map(([, { total, meta }]) => ({ ...meta, amount: total }))
       .sort((a, b) => b.amount - a.amount)
-      .slice(0, 8);
-  }, [bankIsConnected, bankTx, categoryOverrides]);
+      .slice(0, 12);
+  }, [bankIsConnected, bankTx, categoryOverrides, activeMonthKey, debtNames]);
+
+  // Transactions for the inline drill-down (all txs in selected month for the expanded category)
+  const categoryDrillTx = useMemo(() => {
+    if (!expandedCategoryKey || !bankIsConnected) return [];
+    return bankTx
+      .filter((tx) => {
+        if (activeMonthKey) {
+          const [y, m] = tx.date.split('-');
+          if (`${y}-${m}` !== activeMonthKey) return false;
+        }
+        if (isTxTransfer(tx)) return false;
+        const meta = resolveDisplayCategory(tx, categoryOverrides, debtNames);
+        if (meta.key === 'transfer') return false;
+        if (txSpendAmount(tx) === 0) return false;
+        return meta.key === expandedCategoryKey;
+      })
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }, [expandedCategoryKey, bankIsConnected, bankTx, activeMonthKey, categoryOverrides, debtNames]);
 
   // Last 5 bank transactions (spending + income, excluding internal transfers, sorted newest-first)
   const recentBankTx = useMemo(() => {
@@ -472,10 +584,88 @@ export default function DashboardScreen() {
       }
     }
 
-    // Bank top category tip
+    // Bank top category tip — skip debt categories (handled separately below)
     if (bankIsConnected && bankCategorySpend.length > 0) {
-      const top = bankCategorySpend[0];
-      items.push({ type: 'tip', text: `${top.icon} Biggest bank spend category: ${top.name} at ${dollars(top.amount)} this period` });
+      const topNonDebt = bankCategorySpend.find(
+        (c) => !c.key.startsWith('debt:') && c.key !== 'debt_payment',
+      );
+      if (topNonDebt) {
+        items.push({ type: 'tip', text: `${topNonDebt.icon} Biggest spend: ${topNonDebt.name} at ${dollars(topNonDebt.amount)} this period` });
+      }
+    }
+
+    // ── Debt encouragement insights ───────────────────────────────────────────
+    // Only runs when bank is connected and the user has debts set up.
+    // If no debt has been paid via bank this month we show nothing (no nagging).
+    if (bankIsConnected && budget.debts.length > 0) {
+      const payableDebts = budget.debts.filter((d) => parseFloat(d.amount) > 0);
+
+      if (payableDebts.length > 0) {
+        // Sum bank payments per debt for the current calendar month
+        const bankDebtAmounts: Record<string, number> = {};
+        for (const tx of bankTx) {
+          const override = categoryOverrides[tx.id];
+          if (!override?.startsWith('debt:')) continue;
+          const [ty, tm] = tx.date.split('-');
+          if (parseInt(ty) !== NOW.getFullYear() || parseInt(tm) - 1 !== NOW.getMonth()) continue;
+          const debtId = override.slice(5);
+          const amount = txSpendAmount(tx);
+          if (amount > 0) bankDebtAmounts[debtId] = (bankDebtAmounts[debtId] ?? 0) + amount;
+        }
+
+        const paidDebtIds = Object.keys(bankDebtAmounts);
+
+        if (paidDebtIds.length > 0) {
+          const allPaid = payableDebts.every((d) => bankDebtAmounts[d.id] > 0);
+
+          if (allPaid) {
+            // Every debt has been addressed this month
+            const label = payableDebts.length === 1
+              ? payableDebts[0].name
+              : `all ${payableDebts.length} debts`;
+            items.push({
+              type: 'good',
+              text: `🎉 ${label} paid for ${activeMonthLabel} — incredible discipline!`,
+            });
+          } else {
+            // Show a per-debt message for each debt that was paid this month
+            for (const debtId of paidDebtIds) {
+              const debt = payableDebts.find((d) => d.id === debtId);
+              if (!debt) continue;
+
+              const paidAmount = bankDebtAmounts[debtId];
+              const minAmount  = parseFloat(debt.amount) || 0;
+              const overpaid   = paidAmount - minAmount;
+
+              if (overpaid > 1) {
+                // Paid more than the minimum — calculate estimated months saved
+                const remaining = parseFloat(debt.currentBalance ?? '') ||
+                                  parseFloat(debt.totalAmount    ?? '') || 0;
+                let payoffNote = '';
+                if (remaining > 0 && minAmount > 0) {
+                  const normalMonths = Math.ceil(remaining / minAmount);
+                  const fasterMonths = Math.ceil(remaining / paidAmount);
+                  const saved = normalMonths - fasterMonths;
+                  if (saved > 0) {
+                    payoffNote = ` — ~${saved} month${saved !== 1 ? 's' : ''} closer to payoff`;
+                  }
+                }
+                items.push({
+                  type: 'good',
+                  text: `💪 ${debt.name}: you paid ${dollars(overpaid)} over the minimum${payoffNote}. Keep building momentum!`,
+                });
+              } else {
+                // Paid at or near the minimum
+                items.push({
+                  type: 'good',
+                  text: `✅ ${debt.name} is paid for ${activeMonthLabel} — right on track!`,
+                });
+              }
+            }
+          }
+        }
+        // No debt paid via bank yet this month → show nothing (no nagging)
+      }
     }
 
     if (items.length === 0) {
@@ -487,7 +677,12 @@ export default function DashboardScreen() {
     }
 
     return items.slice(0, 4);
-  }, [budget.categories, categorySpend, spendableBudget, totalSpent, hasTrendData, monthlyTrend, bankIsConnected, bankCategorySpend, budget.transactions]);
+  }, [
+    budget.categories, categorySpend, spendableBudget, totalSpent,
+    hasTrendData, monthlyTrend, bankIsConnected, bankCategorySpend,
+    bankTx, categoryOverrides, budget.debts, activeMonthLabel,
+    budget.transactions,
+  ]);
 
   // ── Derived for display ────────────────────────────────────────────────────
 
@@ -567,29 +762,149 @@ export default function DashboardScreen() {
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Spending by Category</Text>
         <Text style={styles.sectionSub}>
-          {bankIsConnected && bankCategorySpend.length > 0 ? 'From bank' : MONTH_LABEL}
+          {bankIsConnected ? activeMonthLabel : MONTH_LABEL}
         </Text>
       </View>
+
+      {/* Month filter pills — only shown when bank is connected */}
+      {bankIsConnected && availableMonths.length > 1 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.monthPillScroll}
+          contentContainerStyle={styles.monthPillRow}
+        >
+          {availableMonths.map((m) => {
+            const active = m.key === activeMonthKey;
+            return (
+              <TouchableOpacity
+                key={m.key}
+                onPress={() => setSelectedMonthKey(m.key)}
+                style={[
+                  styles.monthPill,
+                  active
+                    ? { backgroundColor: colors.primary }
+                    : { backgroundColor: colors.surfaceAlt, borderColor: colors.border, borderWidth: 1 },
+                ]}
+                activeOpacity={0.8}
+              >
+                <Text style={[
+                  styles.monthPillText,
+                  { color: active ? colors.textInverse : colors.textSecondary },
+                ]}>
+                  {m.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
+
       {displayCategories.length === 0 ? (
         <View style={styles.emptyWrap}>
           <Text style={styles.emptyIcon}>📊</Text>
           <Text style={styles.emptyText}>
-            {bankIsConnected ? 'No transactions yet from your bank.' : 'No spending data yet this month.'}
+            {bankIsConnected ? `No transactions for ${activeMonthLabel}.` : 'No spending data yet this month.'}
           </Text>
         </View>
       ) : (
-        displayCategories.map((item, idx) => (
-          <View key={item.name}>
-            <CategoryBar
-              icon={item.icon}
-              name={item.name}
-              color={item.color}
-              spent={item.amount}
-              maxSpent={maxDisplaySpend}
-            />
-            {idx < displayCategories.length - 1 && <View style={styles.divider} />}
-          </View>
-        ))
+        displayCategories.map((item, idx) => {
+          const catKey   = item.key ?? item.name;
+          const isExpanded = bankIsConnected && expandedCategoryKey === catKey;
+          const isLast   = idx === displayCategories.length - 1;
+          const drillTotal = isExpanded
+            ? categoryDrillTx.reduce((s, tx) => s + txSpendAmount(tx), 0)
+            : 0;
+
+          return (
+            <View key={catKey}>
+              <TouchableOpacity
+                activeOpacity={bankIsConnected ? 0.75 : 1}
+                onPress={bankIsConnected
+                  ? () => {
+                      setExpandedCategoryKey(isExpanded ? null : catKey);
+                    }
+                  : undefined
+                }
+              >
+                <CategoryBar
+                  icon={item.icon}
+                  name={item.name}
+                  color={item.color}
+                  spent={item.amount}
+                  maxSpent={maxDisplaySpend}
+                  tappable={bankIsConnected}
+                  isExpanded={isExpanded}
+                />
+              </TouchableOpacity>
+
+              {/* ── Inline drill-down panel ── */}
+              {isExpanded && (
+                <View style={[styles.drillPanel, { backgroundColor: item.color + '0D', borderWidth: 1, borderColor: item.color + '28' }]}>
+                  {/* Summary row */}
+                  <View style={[styles.drillTotalRow, { borderBottomWidth: 1, borderBottomColor: item.color + '28' }]}>
+                    <Text style={[styles.drillTotalLabel, { color: colors.textSecondary }]}>
+                      {categoryDrillTx.length} transaction{categoryDrillTx.length !== 1 ? 's' : ''}
+                    </Text>
+                    <Text style={[styles.drillTotalAmt, { color: item.color }]}>
+                      {dollars(drillTotal)}
+                    </Text>
+                  </View>
+
+                  {categoryDrillTx.length === 0 ? (
+                    <Text style={[styles.drillEmpty, { color: colors.textMuted }]}>
+                      No transactions found.
+                    </Text>
+                  ) : (
+                    categoryDrillTx.map((tx, txi) => {
+                      const amount  = txSpendAmount(tx);
+                      const name    = tx.details?.counterparty?.name ?? tx.description ?? '—';
+                      const dateStr = new Date(tx.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                      const hasOverride = !!categoryOverrides[tx.id];
+                      return (
+                        <View key={tx.id}>
+                          <View style={styles.drillTxRow}>
+                            <View style={styles.drillTxLeft}>
+                              <Text style={[styles.drillTxName, { color: colors.textPrimary }]} numberOfLines={1}>
+                                {name}
+                              </Text>
+                              <Text style={[styles.drillTxMeta, { color: colors.textMuted }]}>
+                                {dateStr}{'  ·  '}{tx.accountName}
+                                {hasOverride ? '  ·  ✏️ reclassified' : ''}
+                              </Text>
+                            </View>
+                            <View style={styles.drillTxRight}>
+                              <Text style={[styles.drillTxAmt, { color: colors.danger }]}>
+                                -{dollars(amount)}
+                              </Text>
+                              <TouchableOpacity
+                                style={[
+                                  styles.drillRemapBtn,
+                                  { backgroundColor: colors.surfaceAlt, borderColor: colors.border },
+                                ]}
+                                onPress={() => setRemapTx(tx)}
+                                activeOpacity={0.7}
+                              >
+                                <Text style={[styles.drillRemapText, { color: colors.textSecondary }]}>
+                                  Reclassify
+                                </Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                          {txi < categoryDrillTx.length - 1 && (
+                            <View style={[styles.drillSep, { backgroundColor: item.color + '28' }]} />
+                          )}
+                        </View>
+                      );
+                    })
+                  )}
+                </View>
+              )}
+
+              {!isLast && <View style={styles.divider} />}
+            </View>
+          );
+        })
       )}
     </Card>
   );
@@ -700,6 +1015,225 @@ export default function DashboardScreen() {
           </>
         )}
       </ScrollView>
+
+      {/* ── Reclassify modal ── */}
+      <DashRemapModal
+        visible={!!remapTx}
+        tx={remapTx}
+        currentOverride={remapTx ? categoryOverrides[remapTx.id] : undefined}
+        debts={budget.debts}
+        debtNames={debtNames}
+        onSelect={async (txId, catKey) => {
+          await setCategoryOverride(txId, catKey);
+          // If the reclassified tx no longer belongs to the expanded category, collapse it
+          if (expandedCategoryKey && catKey !== expandedCategoryKey) {
+            setExpandedCategoryKey(null);
+          }
+          setRemapTx(null);
+        }}
+        onClear={async (txId) => {
+          await clearCategoryOverride(txId);
+          setRemapTx(null);
+        }}
+        onClose={() => setRemapTx(null)}
+      />
     </SafeAreaView>
   );
 }
+
+// ─── DashRemapModal ───────────────────────────────────────────────────────────
+// Lightweight reclassify sheet used from the inline category drill-down.
+
+function DashRemapModal({
+  visible, tx, currentOverride, debts, debtNames, onSelect, onClear, onClose,
+}: {
+  visible: boolean;
+  tx: TellerTransaction | null;
+  currentOverride?: string;
+  debts: import('../types/budget').DebtItem[];
+  debtNames: Record<string, string>;
+  onSelect: (txId: string, catKey: string) => Promise<void>;
+  onClear: (txId: string) => Promise<void>;
+  onClose: () => void;
+}) {
+  const { colors } = useTheme();
+  const [search, setSearch]             = useState('');
+  const [showDebtPicker, setShowDebtPicker] = useState(false);
+
+  // Reset state each time the modal opens
+  React.useEffect(() => {
+    if (!visible) { setSearch(''); setShowDebtPicker(false); }
+  }, [visible]);
+
+  if (!tx) return null;
+
+  const autoName = resolveTxCategory(tx).name;
+  const hasOverride = !!currentOverride;
+
+  const filtered = search.trim()
+    ? DISPLAY_CATEGORIES.filter((c) =>
+        c.name.toLowerCase().includes(search.toLowerCase())
+      )
+    : DISPLAY_CATEGORIES;
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onClose}
+    >
+      <View style={[remap.root, { backgroundColor: colors.background }]}>
+
+        {/* Header */}
+        <View style={[remap.header, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
+          {showDebtPicker ? (
+            <TouchableOpacity onPress={() => setShowDebtPicker(false)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+              <Text style={[remap.back, { color: colors.primary }]}>‹ Back</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={{ width: 48 }} />
+          )}
+          <Text style={[remap.title, { color: colors.textPrimary }]}>
+            {showDebtPicker ? 'Pick a Debt' : 'Reclassify'}
+          </Text>
+          <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+            <Text style={[remap.close, { color: colors.textMuted }]}>✕</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Transaction summary pill */}
+        {!showDebtPicker && (
+          <View style={[remap.txPill, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
+            <Text style={[remap.txName, { color: colors.textPrimary }]} numberOfLines={1}>
+              {tx.details?.counterparty?.name ?? tx.description ?? '—'}
+            </Text>
+            <Text style={[remap.txMeta, { color: colors.textMuted }]}>
+              Auto-detected: {autoName}
+            </Text>
+          </View>
+        )}
+
+        {/* Search bar */}
+        {!showDebtPicker && (
+          <View style={[remap.searchWrap, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
+            <Text style={{ color: colors.textMuted, fontSize: 15, marginRight: 6 }}>🔍</Text>
+            <TextInput
+              style={[remap.searchInput, { color: colors.textPrimary }]}
+              placeholder="Search categories…"
+              placeholderTextColor={colors.textMuted}
+              value={search}
+              onChangeText={setSearch}
+              autoCorrect={false}
+            />
+          </View>
+        )}
+
+        {/* List */}
+        {showDebtPicker ? (
+          // ── Debt sub-picker ──
+          <FlatList
+            data={debts.filter((d) => parseFloat(d.amount) > 0)}
+            keyExtractor={(d) => d.id}
+            contentContainerStyle={remap.list}
+            ListEmptyComponent={
+              <Text style={[remap.emptyText, { color: colors.textMuted }]}>
+                No debts set up. Add them in Budget Setup.
+              </Text>
+            }
+            renderItem={({ item: debt }) => (
+              <TouchableOpacity
+                style={[remap.row, { borderBottomColor: colors.border }]}
+                onPress={() => onSelect(tx.id, `debt:${debt.id}`)}
+                activeOpacity={0.7}
+              >
+                <Text style={remap.rowIcon}>💳</Text>
+                <View style={remap.rowInfo}>
+                  <Text style={[remap.rowName, { color: colors.textPrimary }]}>{debt.name}</Text>
+                  <Text style={[remap.rowSub, { color: colors.textMuted }]}>
+                    ${parseFloat(debt.amount).toLocaleString()}/mo
+                    {debt.currentBalance ? `  ·  $${parseFloat(debt.currentBalance).toLocaleString()} remaining` : ''}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            )}
+          />
+        ) : (
+          // ── Main category list ──
+          <FlatList
+            data={filtered}
+            keyExtractor={(c) => c.key}
+            contentContainerStyle={remap.list}
+            ListHeaderComponent={
+              hasOverride ? (
+                <TouchableOpacity
+                  style={[remap.resetRow, { borderBottomColor: colors.border, backgroundColor: colors.dangerLight }]}
+                  onPress={() => onClear(tx.id)}
+                  activeOpacity={0.75}
+                >
+                  <Text style={remap.rowIcon}>↩️</Text>
+                  <Text style={[remap.resetText, { color: colors.danger }]}>
+                    Reset to auto-detected ({autoName})
+                  </Text>
+                </TouchableOpacity>
+              ) : null
+            }
+            renderItem={({ item: cat }) => {
+              const isDebt = cat.key === 'debt_payment';
+              const isActive = !isDebt && currentOverride === cat.key;
+              return (
+                <TouchableOpacity
+                  style={[
+                    remap.row,
+                    { borderBottomColor: colors.border },
+                    isActive && { backgroundColor: colors.primaryLight },
+                  ]}
+                  onPress={() => isDebt ? setShowDebtPicker(true) : onSelect(tx.id, cat.key)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[remap.iconBubble, { backgroundColor: cat.color + '22' }]}>
+                    <Text style={remap.rowIcon}>{cat.icon}</Text>
+                  </View>
+                  <View style={remap.rowInfo}>
+                    <Text style={[remap.rowName, { color: colors.textPrimary }]}>{cat.name}</Text>
+                  </View>
+                  {isActive && (
+                    <Text style={[remap.checkmark, { color: colors.primary }]}>✓</Text>
+                  )}
+                  {isDebt && (
+                    <Text style={[remap.chevron, { color: colors.textMuted }]}>›</Text>
+                  )}
+                </TouchableOpacity>
+              );
+            }}
+          />
+        )}
+      </View>
+    </Modal>
+  );
+}
+
+const remap = StyleSheet.create({
+  root:      { flex: 1 },
+  header:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing[5], paddingVertical: spacing[4], borderBottomWidth: 1 },
+  back:      { fontSize: typography.base, fontWeight: typography.semibold, width: 64 },
+  title:     { fontSize: typography.base, fontWeight: typography.bold },
+  close:     { fontSize: typography.xl, width: 48, textAlign: 'right' },
+  txPill:    { marginHorizontal: spacing[5], marginTop: spacing[4], marginBottom: spacing[1], padding: spacing[3], borderRadius: radius.lg, borderWidth: 1 },
+  txName:    { fontSize: typography.sm, fontWeight: typography.semibold },
+  txMeta:    { fontSize: typography.xs, marginTop: 2 },
+  searchWrap:{ flexDirection: 'row', alignItems: 'center', marginHorizontal: spacing[5], marginVertical: spacing[3], paddingHorizontal: spacing[3], paddingVertical: spacing[2], borderRadius: radius.lg, borderWidth: 1 },
+  searchInput:{ flex: 1, fontSize: typography.sm, paddingVertical: 0 },
+  list:      { paddingBottom: spacing[10] },
+  resetRow:  { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing[5], paddingVertical: spacing[4], borderBottomWidth: 1, gap: spacing[3] },
+  resetText: { fontSize: typography.sm, fontWeight: typography.semibold, flex: 1 },
+  row:       { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing[5], paddingVertical: spacing[4], borderBottomWidth: 1, gap: spacing[3] },
+  iconBubble:{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  rowIcon:   { fontSize: 16 },
+  rowInfo:   { flex: 1 },
+  rowName:   { fontSize: typography.sm, fontWeight: typography.medium },
+  rowSub:    { fontSize: typography.xs, marginTop: 2 },
+  checkmark: { fontSize: typography.base, fontWeight: typography.bold },
+  chevron:   { fontSize: typography.xl },
+  emptyText: { padding: spacing[5], fontSize: typography.sm, textAlign: 'center' },
+});

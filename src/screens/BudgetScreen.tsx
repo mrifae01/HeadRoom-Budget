@@ -36,9 +36,11 @@ import Card from '../components/Card';
 import ProgressBar from '../components/ProgressBar';
 import AddExpenseModal from '../components/AddExpenseModal';
 import { useBudget } from '../context/BudgetContext';
+import { useBank } from '../context/BankContext';
 import { useIsDesktop } from '../hooks/useIsDesktop';
 import { CategoryItem, DebtItem, Transaction } from '../types/budget';
-import { dollars, formatDate, todayISO } from '../utils/formatters';
+import { dollars, todayISO } from '../utils/formatters';
+import { txSpendAmount } from '../utils/teller';
 
 // ─── "Other" catch-all category ──────────────────────────────────────────────
 const OTHER_CATEGORY: CategoryItem = {
@@ -155,82 +157,6 @@ function isInWindow(isoDate: string, start: Date, end: Date): boolean {
   const [y, m, d] = isoDate.split('-').map(Number);
   const date = new Date(y, m - 1, d);
   return date >= start && date <= end;
-}
-
-function getCategoryMeta(name: string, categories: CategoryItem[]): { icon: string; color: string } {
-  return categories.find((c) => c.name === name) ?? { icon: '📦', color: '#94A3B8' };
-}
-
-// ─── TransactionRow ───────────────────────────────────────────────────────────
-
-const createTxStyles = (c: Colors) => StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing[2],
-    gap: spacing[3],
-  },
-  left: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing[3] },
-  iconWrap: { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  icon: { fontSize: 16 },
-  info: { flex: 1 },
-  category: { fontSize: typography.sm, fontWeight: typography.semibold, color: c.textPrimary },
-  meta: { fontSize: typography.xs, color: c.textMuted, marginTop: 1 },
-  right: { alignItems: 'flex-end', gap: spacing[1] },
-  amount: { fontSize: typography.sm, fontWeight: typography.bold, color: c.textPrimary },
-  actions: { flexDirection: 'row', gap: spacing[1] },
-  editBubble: {
-    backgroundColor: c.primaryLight, borderRadius: radius.full,
-    paddingHorizontal: spacing[2], paddingVertical: 2,
-    borderWidth: 1, borderColor: c.primary + '40',
-  },
-  editBubbleText: { fontSize: typography.xs, fontWeight: typography.semibold, color: c.primary },
-  deleteBubble: {
-    backgroundColor: c.dangerLight, borderRadius: radius.full,
-    paddingHorizontal: spacing[2], paddingVertical: 2,
-    borderWidth: 1, borderColor: c.danger + '40',
-  },
-  deleteBubbleText: { fontSize: typography.xs, fontWeight: typography.semibold, color: c.danger },
-});
-
-function TransactionRow({
-  transaction, categories, onEdit, onDelete,
-}: {
-  transaction: Transaction;
-  categories: CategoryItem[];
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
-  const { colors } = useTheme();
-  const txStyles = useMemo(() => createTxStyles(colors), [colors]);
-  const { icon, color } = getCategoryMeta(transaction.categoryName, categories);
-
-  return (
-    <View style={txStyles.row}>
-      <View style={txStyles.left}>
-        <View style={[txStyles.iconWrap, { backgroundColor: color + '22' }]}>
-          <Text style={txStyles.icon}>{icon}</Text>
-        </View>
-        <View style={txStyles.info}>
-          <Text style={txStyles.category}>{transaction.categoryName}</Text>
-          <Text style={txStyles.meta}>
-            {formatDate(transaction.date)}{transaction.note ? ` · ${transaction.note}` : ''}
-          </Text>
-        </View>
-      </View>
-      <View style={txStyles.right}>
-        <Text style={txStyles.amount}>{dollars(transaction.amount)}</Text>
-        <View style={txStyles.actions}>
-          <TouchableOpacity style={txStyles.editBubble} onPress={onEdit}>
-            <Text style={txStyles.editBubbleText}>Edit</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={txStyles.deleteBubble} onPress={onDelete}>
-            <Text style={txStyles.deleteBubbleText}>Delete</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </View>
-  );
 }
 
 // ─── HeroCard (compact — no button inside) ────────────────────────────────────
@@ -544,29 +470,36 @@ const createDebtCardStyles = (c: Colors) => StyleSheet.create({
   timelineBold: { fontWeight: typography.bold, color: c.primary },
   right: { alignItems: 'flex-end', gap: spacing[1] },
   monthlyAmount: { fontSize: typography.sm, fontWeight: typography.semibold, color: c.textPrimary },
-  paidBtn: { backgroundColor: c.primaryLight, borderRadius: radius.full, paddingHorizontal: spacing[3], paddingVertical: spacing[1] + 1, borderWidth: 1, borderColor: c.primary + '40' },
-  paidBtnDone: { backgroundColor: c.accentLight, borderColor: c.accent + '40' },
-  paidBtnText: { fontSize: typography.xs, fontWeight: typography.bold, color: c.primary },
-  paidBtnTextDone: { color: c.accent },
-  progressWrap: { marginTop: spacing[1], gap: spacing[1] },
+  paidBtn:     { backgroundColor: c.primaryLight, borderRadius: radius.full, paddingHorizontal: spacing[3], paddingVertical: spacing[1] + 1, borderWidth: 1, borderColor: c.primary + '40' },
+  // Teal/cyan "done" state — calm and encouraging
+  paidBtnDone: { backgroundColor: '#CFFAFE', borderColor: '#0891B2' + '60' },
+  paidBtnText:     { fontSize: typography.xs, fontWeight: typography.bold, color: c.primary },
+  paidBtnTextDone: { color: '#0891B2' },
+  progressWrap:  { marginTop: spacing[1], gap: spacing[1] },
   progressTrack: { height: 5, borderRadius: radius.full, backgroundColor: c.border, overflow: 'hidden' as const },
-  progressFill: { height: '100%' as unknown as number, borderRadius: radius.full, backgroundColor: c.primary },
-  progressText: { fontSize: typography.xs, color: c.textMuted },
-  progressTextBold: { fontWeight: typography.semibold, color: c.textSecondary },
-  customAmountBtn: { paddingVertical: spacing[1], alignSelf: 'flex-end' },
+  // Teal fill to match the debt theme
+  progressFill:      { height: '100%' as unknown as number, borderRadius: radius.full, backgroundColor: '#0891B2' },
+  progressText:      { fontSize: typography.xs, color: c.textMuted },
+  progressTextBold:  { fontWeight: typography.semibold, color: c.textSecondary },
+  timelineBold:      { fontWeight: typography.bold as any, color: '#0891B2' },
+  customAmountBtn:   { paddingVertical: spacing[1], alignSelf: 'flex-end' },
   customAmountBtnText: { fontSize: typography.xs, color: c.textMuted, textDecorationLine: 'underline' as const },
-  customWrap: { flexDirection: 'row' as const, alignItems: 'center', gap: spacing[2], marginTop: spacing[2], paddingTop: spacing[2], borderTopWidth: 1, borderTopColor: c.border },
-  customInputField: { flex: 1, borderWidth: 1, borderColor: c.border, borderRadius: radius.sm, paddingHorizontal: spacing[3], paddingVertical: spacing[1] + 1, fontSize: typography.sm, color: c.textPrimary, backgroundColor: c.surface },
-  customConfirmBtn: { backgroundColor: c.primary, borderRadius: radius.full, paddingHorizontal: spacing[3], paddingVertical: spacing[1] + 1 },
+  customWrap:        { flexDirection: 'row' as const, alignItems: 'center', gap: spacing[2], marginTop: spacing[2], paddingTop: spacing[2], borderTopWidth: 1, borderTopColor: c.border },
+  customInputField:  { flex: 1, borderWidth: 1, borderColor: c.border, borderRadius: radius.sm, paddingHorizontal: spacing[3], paddingVertical: spacing[1] + 1, fontSize: typography.sm, color: c.textPrimary, backgroundColor: c.surface },
+  customConfirmBtn:  { backgroundColor: '#0891B2', borderRadius: radius.full, paddingHorizontal: spacing[3], paddingVertical: spacing[1] + 1 },
   customConfirmText: { fontSize: typography.xs, fontWeight: typography.bold, color: '#fff' },
-  customCancelBtn: { paddingHorizontal: spacing[2], paddingVertical: spacing[1] + 1 },
-  customCancelText: { fontSize: typography.xs, color: c.textMuted },
+  customCancelBtn:   { paddingHorizontal: spacing[2], paddingVertical: spacing[1] + 1 },
+  customCancelText:  { fontSize: typography.xs, color: c.textMuted },
+  // Shown below "✓ Via Bank" button — teal to match the debt tone
+  bankPayNote: { fontSize: typography.xs, color: '#0891B2', fontWeight: typography.medium as any, marginTop: 2 },
 });
 
-function DebtPaymentCard({ debts, paidThisMonth, onPaid }: {
+function DebtPaymentCard({ debts, paidThisMonth, onPaid, bankPaidAmounts = {} }: {
   debts: DebtItem[];
   paidThisMonth: Set<string>;
   onPaid: (debt: DebtItem, amount: number) => void;
+  /** debtId → total bank-detected payment amount this month */
+  bankPaidAmounts?: Record<string, number>;
 }) {
   const { colors } = useTheme();
   const s = useMemo(() => createDebtCardStyles(colors), [colors]);
@@ -583,15 +516,22 @@ function DebtPaymentCard({ debts, paidThisMonth, onPaid }: {
         <Text style={s.sub}>tap when paid</Text>
       </View>
       {payable.map((debt, idx) => {
-        const monthly   = parseFloat(debt.amount);
-        const total     = parseFloat(debt.totalAmount ?? '') || 0;
-        const current   = parseFloat(debt.currentBalance ?? '') || 0;
-        const remaining = current > 0 ? current : total;
-        const hasForecast = monthly > 0 && remaining > 0;
-        const hasProgress = total > 0 && current > 0 && current <= total;
-        const paidOff   = hasProgress ? total - current : 0;
-        const pct       = hasProgress ? Math.round((paidOff / total) * 100) : 0;
-        const isPaid    = paidThisMonth.has(debt.name);
+        const monthly      = parseFloat(debt.amount);
+        const total        = parseFloat(debt.totalAmount ?? '') || 0;
+        const current      = parseFloat(debt.currentBalance ?? '') || 0;
+        const remaining    = current > 0 ? current : total;
+        const hasForecast  = monthly > 0 && remaining > 0;
+        const hasProgress  = total > 0 && current > 0 && current <= total;
+        const paidOff      = hasProgress ? total - current : 0;
+        const pct          = hasProgress ? Math.round((paidOff / total) * 100) : 0;
+
+        // Manual payment (logged via "I Paid" button)
+        const isManualPaid = paidThisMonth.has(debt.name);
+        // Bank payment (reclassified as this debt on the Dashboard)
+        const bankAmount   = bankPaidAmounts[debt.id] ?? 0;
+        const isBankPaid   = bankAmount > 0;
+        // Either source marks the debt as paid for this month
+        const isPaid       = isManualPaid || isBankPaid;
 
         return (
           <View key={debt.id}>
@@ -615,11 +555,28 @@ function DebtPaymentCard({ debts, paidThisMonth, onPaid }: {
               </View>
               <View style={s.right}>
                 <Text style={s.monthlyAmount}>${monthly.toLocaleString()}/mo</Text>
-                <TouchableOpacity style={[s.paidBtn, isPaid && s.paidBtnDone]} onPress={() => !isPaid && onPaid(debt, monthly)} disabled={isPaid} activeOpacity={0.8}>
-                  <Text style={[s.paidBtnText, isPaid && s.paidBtnTextDone]}>{isPaid ? '✓  Paid' : 'I Paid'}</Text>
+                <TouchableOpacity
+                  style={[s.paidBtn, isPaid && s.paidBtnDone]}
+                  onPress={() => !isPaid && onPaid(debt, monthly)}
+                  disabled={isPaid}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[s.paidBtnText, isPaid && s.paidBtnTextDone]}>
+                    {isManualPaid ? '✓  Paid' : isBankPaid ? '✓  Via Bank' : 'I Paid'}
+                  </Text>
                 </TouchableOpacity>
+                {/* Show detected bank amount as a subtle label */}
+                {isBankPaid && (
+                  <Text style={s.bankPayNote}>
+                    ${bankAmount % 1 === 0 ? bankAmount.toLocaleString() : bankAmount.toFixed(2)} detected
+                  </Text>
+                )}
                 {!isPaid && (
-                  <TouchableOpacity style={s.customAmountBtn} onPress={() => { setCustomDebtId(debt.id === customDebtId ? null : debt.id); setCustomInput(''); }} activeOpacity={0.7}>
+                  <TouchableOpacity
+                    style={s.customAmountBtn}
+                    onPress={() => { setCustomDebtId(debt.id === customDebtId ? null : debt.id); setCustomInput(''); }}
+                    activeOpacity={0.7}
+                  >
                     <Text style={s.customAmountBtnText}>Custom amount</Text>
                   </TouchableOpacity>
                 )}
@@ -627,11 +584,27 @@ function DebtPaymentCard({ debts, paidThisMonth, onPaid }: {
             </View>
             {customDebtId === debt.id && (
               <View style={s.customWrap}>
-                <TextInput style={s.customInputField} placeholder={`e.g. ${monthly}`} placeholderTextColor={colors.textMuted} keyboardType="decimal-pad" value={customInput} onChangeText={setCustomInput} autoFocus />
-                <TouchableOpacity style={s.customConfirmBtn} onPress={() => { const amt = parseFloat(customInput); if (amt > 0) { onPaid(debt, amt); setCustomDebtId(null); setCustomInput(''); } }} activeOpacity={0.8}>
+                <TextInput
+                  style={s.customInputField}
+                  placeholder={`e.g. ${monthly}`}
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="decimal-pad"
+                  value={customInput}
+                  onChangeText={setCustomInput}
+                  autoFocus
+                />
+                <TouchableOpacity
+                  style={s.customConfirmBtn}
+                  onPress={() => { const amt = parseFloat(customInput); if (amt > 0) { onPaid(debt, amt); setCustomDebtId(null); setCustomInput(''); } }}
+                  activeOpacity={0.8}
+                >
                   <Text style={s.customConfirmText}>Confirm</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={s.customCancelBtn} onPress={() => { setCustomDebtId(null); setCustomInput(''); }} activeOpacity={0.7}>
+                <TouchableOpacity
+                  style={s.customCancelBtn}
+                  onPress={() => { setCustomDebtId(null); setCustomInput(''); }}
+                  activeOpacity={0.7}
+                >
                   <Text style={s.customCancelText}>Cancel</Text>
                 </TouchableOpacity>
               </View>
@@ -680,15 +653,6 @@ const createStyles = (c: Colors) => StyleSheet.create({
   breakdownTitle: { fontSize: typography.base, fontWeight: typography.bold, color: c.textPrimary },
   breakdownSub: { fontSize: typography.xs, color: c.textMuted },
 
-  recentCard: { marginTop: spacing[3] },
-  recentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: spacing[2] },
-  recentTitle: { fontSize: typography.base, fontWeight: typography.bold, color: c.textPrimary },
-  recentCount: { fontSize: typography.xs, color: c.textMuted },
-  recentEmpty: { paddingVertical: spacing[4], alignItems: 'center' },
-  recentEmptyText: { fontSize: typography.sm, color: c.textMuted, textAlign: 'center' },
-  recentToggle: { paddingVertical: spacing[2], alignItems: 'center' },
-  recentToggleText: { fontSize: typography.sm, fontWeight: typography.semibold, color: c.primary },
-
   monthEndBanner: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: c.warningLight, borderRadius: radius.lg,
@@ -720,6 +684,11 @@ const createStyles = (c: Colors) => StyleSheet.create({
 export default function BudgetScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { budget, addTransaction, deleteTransaction, updateDebtBalance, monthEndPending, confirmMonthEnd } = useBudget();
+  const {
+    isConnected: bankIsConnected,
+    transactions: bankTx,
+    categoryOverrides,
+  } = useBank();
   const isDesktop = useIsDesktop();
   const { colors, isDark } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -728,10 +697,8 @@ export default function BudgetScreen() {
   const [editingTransaction,  setEditingTransaction]  = useState<Transaction | null>(null);
   const [celebration,         setCelebration]         = useState<{ name: string; amount: number } | null>(null);
   const [period,              setPeriod]              = useState<Period>('month');
-  const [showAllExpenses,     setShowAllExpenses]     = useState(false);
   const [showMonthEndModal,   setShowMonthEndModal]   = useState(false);
   const prevMonthEndPendingRef = useRef(false);
-  const EXPENSE_PREVIEW = 5;
 
   useEffect(() => {
     if (monthEndPending && !prevMonthEndPendingRef.current) setShowMonthEndModal(true);
@@ -775,21 +742,58 @@ export default function BudgetScreen() {
   const totalDebt   = useMemo(() => budget.debts.reduce((s, d) => s + (parseFloat(d.amount) || 0), 0), [budget.debts]);
   const debtNamesSet = useMemo(() => new Set(budget.debts.map((d) => d.name)), [budget.debts]);
 
-  const debtPaidThisMonth = useMemo(
-    () => thisMonth.filter((tx) => debtNamesSet.has(tx.categoryName)).reduce((s, tx) => s + tx.amount, 0),
-    [thisMonth, debtNamesSet],
-  );
+  /**
+   * Bank transactions reclassified as a specific debt ("debt:${debtId}") in the
+   * current calendar month.  Maps debtId → total amount detected from bank.
+   * Reactively recalculates whenever overrides or bank transactions change, so
+   * clearing / reclassifying a transaction immediately unreflects the payment.
+   */
+  const bankDebtPayments = useMemo<Record<string, number>>(() => {
+    if (!bankIsConnected || bankTx.length === 0) return {};
+    const map: Record<string, number> = {};
+    for (const tx of bankTx) {
+      const override = categoryOverrides[tx.id];
+      if (!override?.startsWith('debt:')) continue;
+      if (!isThisMonthLocal(tx.date)) continue;
+      const debtId = override.slice(5);
+      const amount = txSpendAmount(tx);
+      if (amount > 0) map[debtId] = (map[debtId] ?? 0) + amount;
+    }
+    return map;
+  }, [bankIsConnected, bankTx, categoryOverrides]);
+
+  /** Combined manual + bank debt payments this month (drives the "Debt Left" metric). */
+  const debtPaidThisMonth = useMemo(() => {
+    const manual = thisMonth
+      .filter((tx) => debtNamesSet.has(tx.categoryName))
+      .reduce((s, tx) => s + tx.amount, 0);
+    const bank = Object.values(bankDebtPayments).reduce((s, v) => s + v, 0);
+    return manual + bank;
+  }, [thisMonth, debtNamesSet, bankDebtPayments]);
 
   const displayCategories = useMemo(() => {
     const has = budget.categories.some((c) => c.name === OTHER_CATEGORY.name);
     return has ? budget.categories : [...budget.categories, OTHER_CATEGORY];
   }, [budget.categories]);
 
+  /**
+   * Set of debt *names* paid this month — used by DebtPaymentCard to flip
+   * "I Paid" → "✓ Paid".  Includes both manual transactions and bank-detected
+   * payments so they stay in sync reactively.
+   */
   const paidDebtNames = useMemo(() => {
     const paid = new Set<string>();
-    for (const tx of thisMonth) { if (debtNamesSet.has(tx.categoryName)) paid.add(tx.categoryName); }
+    // Manual payments (log-expense transactions whose category matches a debt name)
+    for (const tx of thisMonth) {
+      if (debtNamesSet.has(tx.categoryName)) paid.add(tx.categoryName);
+    }
+    // Bank payments (override = "debt:${debtId}")
+    for (const debtId of Object.keys(bankDebtPayments)) {
+      const debt = budget.debts.find((d) => d.id === debtId);
+      if (debt) paid.add(debt.name);
+    }
     return paid;
-  }, [thisMonth, debtNamesSet]);
+  }, [thisMonth, debtNamesSet, bankDebtPayments, budget.debts]);
 
   const handleDebtPaid = useCallback(async (debt: DebtItem, amount: number) => {
     await addTransaction({ categoryName: debt.name, amount, date: todayISO(), note: 'Debt payment' });
@@ -849,11 +853,6 @@ export default function BudgetScreen() {
 
   const effectivePeriodBudget = useMemo(() => periodBudget + surplus, [periodBudget, surplus]);
   const periodLabel = period === 'month' ? 'Month' : period === 'biweek' ? 'Bi-Week' : 'Week';
-
-  const periodTransactionsSorted = useMemo(
-    () => [...periodTransactions].sort((a, b) => b.date.localeCompare(a.date)),
-    [periodTransactions],
-  );
 
   // ── Render helpers ────────────────────────────────────────────────────────────
 
@@ -943,38 +942,7 @@ export default function BudgetScreen() {
             <View style={styles.columns}>
               {/* Left column */}
               <View style={styles.leftCol}>
-                <DebtPaymentCard debts={budget.debts} paidThisMonth={paidDebtNames} onPaid={handleDebtPaid} />
-
-                <Card style={styles.recentCard}>
-                  <View style={styles.recentHeader}>
-                    <Text style={styles.recentTitle}>Recent Expenses</Text>
-                    {periodTransactionsSorted.length > 0 && (
-                      <Text style={styles.recentCount}>{periodTransactionsSorted.length} {periodTransactionsSorted.length === 1 ? 'entry' : 'entries'}</Text>
-                    )}
-                  </View>
-                  {periodTransactionsSorted.length === 0 ? (
-                    <View style={styles.recentEmpty}>
-                      <Text style={styles.recentEmptyText}>No expenses yet. Hit "+ Log Expense" to get started.</Text>
-                    </View>
-                  ) : (
-                    <>
-                      {(showAllExpenses ? periodTransactionsSorted : periodTransactionsSorted.slice(0, EXPENSE_PREVIEW)).map((tx, idx, arr) => (
-                        <View key={tx.id}>
-                          <TransactionRow transaction={tx} categories={displayCategories} onEdit={() => openEdit(tx)} onDelete={() => handleDelete(tx)} />
-                          {idx < arr.length - 1 && <View style={styles.divider} />}
-                        </View>
-                      ))}
-                      {periodTransactionsSorted.length > EXPENSE_PREVIEW && (
-                        <>
-                          <View style={styles.divider} />
-                          <TouchableOpacity style={styles.recentToggle} onPress={() => setShowAllExpenses((v) => !v)} activeOpacity={0.7}>
-                            <Text style={styles.recentToggleText}>{showAllExpenses ? 'Show less' : `View all ${periodTransactionsSorted.length} expenses`}</Text>
-                          </TouchableOpacity>
-                        </>
-                      )}
-                    </>
-                  )}
-                </Card>
+                <DebtPaymentCard debts={budget.debts} paidThisMonth={paidDebtNames} onPaid={handleDebtPaid} bankPaidAmounts={bankDebtPayments} />
               </View>
 
               {/* Right column */}
@@ -986,37 +954,7 @@ export default function BudgetScreen() {
           ) : (
             <>
               {categoryBreakdown}
-              <DebtPaymentCard debts={budget.debts} paidThisMonth={paidDebtNames} onPaid={handleDebtPaid} />
-              <Card style={styles.recentCard}>
-                <View style={styles.recentHeader}>
-                  <Text style={styles.recentTitle}>Recent Expenses</Text>
-                  {periodTransactionsSorted.length > 0 && (
-                    <Text style={styles.recentCount}>{periodTransactionsSorted.length} {periodTransactionsSorted.length === 1 ? 'entry' : 'entries'}</Text>
-                  )}
-                </View>
-                {periodTransactionsSorted.length === 0 ? (
-                  <View style={styles.recentEmpty}>
-                    <Text style={styles.recentEmptyText}>No expenses yet. Tap "+ Log Expense" to get started.</Text>
-                  </View>
-                ) : (
-                  <>
-                    {(showAllExpenses ? periodTransactionsSorted : periodTransactionsSorted.slice(0, EXPENSE_PREVIEW)).map((tx, idx, arr) => (
-                      <View key={tx.id}>
-                        <TransactionRow transaction={tx} categories={displayCategories} onEdit={() => openEdit(tx)} onDelete={() => handleDelete(tx)} />
-                        {idx < arr.length - 1 && <View style={styles.divider} />}
-                      </View>
-                    ))}
-                    {periodTransactionsSorted.length > EXPENSE_PREVIEW && (
-                      <>
-                        <View style={styles.divider} />
-                        <TouchableOpacity style={styles.recentToggle} onPress={() => setShowAllExpenses((v) => !v)} activeOpacity={0.7}>
-                          <Text style={styles.recentToggleText}>{showAllExpenses ? 'Show less' : `View all ${periodTransactionsSorted.length} expenses`}</Text>
-                        </TouchableOpacity>
-                      </>
-                    )}
-                  </>
-                )}
-              </Card>
+              <DebtPaymentCard debts={budget.debts} paidThisMonth={paidDebtNames} onPaid={handleDebtPaid} bankPaidAmounts={bankDebtPayments} />
               {reportsLink}
             </>
           )}
