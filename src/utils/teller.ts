@@ -83,6 +83,53 @@ const ACCOUNT_MASK_RE = /x{3,}\d*|(?:acct|account)[\s#]*\d{4,}/i;
 const INTERNAL_DESC_RE =
   /^(withdrawal to |deposit from |transfer to |transfer from |online transfer |mobile transfer |internal transfer )/i;
 
+/**
+ * True if this transaction is a credit card payment — the settlement event
+ * that moves money to pay off a credit card balance.
+ *
+ * WHY we need this:
+ *   Individual charges on a connected credit card already appear as positive
+ *   spending transactions on the credit account.  When the user then pays the
+ *   bill from their checking account, that outflow ALSO looks like spending —
+ *   which would double-count every credit card purchase.
+ *
+ * TWO CASES:
+ *   1. Credit-account side  — a negative amount on a credit account means the
+ *      balance went down (payment received).  txSpendAmount already returns 0
+ *      for this, but we flag it here for completeness / filtering from displays.
+ *
+ *   2. Depository-account side — money leaving checking to pay the credit card.
+ *      This is the dangerous double-count.  We detect it via Teller's category
+ *      slug ('credit_card') or well-known description keywords.
+ */
+const CC_PAYMENT_CATEGORY = 'credit_card';
+const CC_PAYMENT_KEYWORDS = [
+  'credit card payment',
+  'creditcard payment',
+  'credit card pymt',
+  'cc payment',
+  'visa payment',
+  'mastercard payment',
+  'amex payment',
+  'american express payment',
+  'discover payment',
+  'capital one payment',
+];
+
+export function isCreditCardPayment(tx: TellerTransaction): boolean {
+  // Case 1 — credit account, negative amount = payment / balance reduction
+  if (tx.accountType === 'credit' && parseFloat(tx.amount) < 0) return true;
+
+  // Case 2 — depository account paying off a credit card
+  const cat = tx.details?.category ?? '';
+  if (cat === CC_PAYMENT_CATEGORY) return true;
+
+  const combined = (
+    (tx.description ?? '') + ' ' + (tx.details?.counterparty?.name ?? '')
+  ).toLowerCase();
+  return CC_PAYMENT_KEYWORDS.some((kw) => combined.includes(kw));
+}
+
 export function isTxTransfer(tx: TellerTransaction): boolean {
   const desc       = tx.description ?? '';
   const merchant   = tx.details?.counterparty?.name ?? '';

@@ -40,7 +40,7 @@ import { useBank } from '../context/BankContext';
 import { useIsDesktop } from '../hooks/useIsDesktop';
 import { CategoryItem, DebtItem, Transaction } from '../types/budget';
 import { dollars, todayISO } from '../utils/formatters';
-import { txSpendAmount } from '../utils/teller';
+import { txSpendAmount, isCreditCardPayment } from '../utils/teller';
 
 // ─── "Other" catch-all category ──────────────────────────────────────────────
 const OTHER_CATEGORY: CategoryItem = {
@@ -616,6 +616,109 @@ function DebtPaymentCard({ debts, paidThisMonth, onPaid, bankPaidAmounts = {} }:
   );
 }
 
+// ─── CreditCardDebtCard ───────────────────────────────────────────────────────
+
+type CCEntry = {
+  account:          import('../types/teller').TellerAccount;
+  balanceOwed:      number;
+  chargedThisMonth: number;
+  paidThisMonth:    number;
+};
+
+const createCCStyles = (c: Colors) => StyleSheet.create({
+  card:        { marginTop: spacing[3] },
+  header:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: spacing[3] },
+  title:       { fontSize: typography.base, fontWeight: typography.bold, color: c.textPrimary },
+  sub:         { fontSize: typography.xs, color: c.textMuted, fontWeight: typography.medium },
+  divider:     { height: 1, backgroundColor: c.border, marginVertical: spacing[2] },
+  row:         { flexDirection: 'row', alignItems: 'center', gap: spacing[3] },
+  iconWrap:    { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center', flexShrink: 0, backgroundColor: '#0891B222' },
+  iconText:    { fontSize: 16 },
+  info:        { flex: 1 },
+  cardName:    { fontSize: typography.sm, fontWeight: typography.semibold, color: c.textPrimary },
+  cardSub:     { fontSize: typography.xs, color: c.textMuted, marginTop: 1 },
+  right:       { alignItems: 'flex-end', gap: spacing[1] },
+  balance:     { fontSize: typography.sm, fontWeight: typography.bold, color: '#0891B2' },
+  paidOff:     { fontSize: typography.sm, fontWeight: typography.bold, color: '#059669' },
+  statsRow:    { flexDirection: 'row', marginTop: spacing[1], gap: spacing[4] },
+  statItem:    { gap: 1 },
+  statLabel:   { fontSize: typography.xs, color: c.textMuted },
+  statValue:   { fontSize: typography.xs, fontWeight: typography.semibold, color: c.textSecondary },
+  barWrap:     { marginTop: spacing[1] },
+  barTrack:    { height: 4, borderRadius: radius.full, backgroundColor: c.border, overflow: 'hidden' as const },
+  barFill:     { height: '100%' as unknown as number, borderRadius: radius.full, backgroundColor: '#0891B2' },
+});
+
+function CreditCardDebtCard({ entries }: { entries: CCEntry[] }) {
+  const { colors } = useTheme();
+  const s = useMemo(() => createCCStyles(colors), [colors]);
+
+  const cards = entries.filter((e) => true); // show all — paid off too
+  if (cards.length === 0) return null;
+
+  const totalOwed = entries.reduce((sum, e) => sum + e.balanceOwed, 0);
+
+  return (
+    <Card style={s.card}>
+      <View style={s.header}>
+        <Text style={s.title}>Credit Card Balances</Text>
+        <Text style={s.sub}>
+          {totalOwed > 0 ? `${dollars(totalOwed)} total owed` : '✓ All clear'}
+        </Text>
+      </View>
+
+      {cards.map((entry, idx) => {
+        const { account, balanceOwed, chargedThisMonth, paidThisMonth } = entry;
+        const isPaidOff   = balanceOwed <= 0;
+        const last4       = account.last_four ? `····${account.last_four}` : '';
+        const utilPct     = chargedThisMonth > 0
+          ? Math.min(Math.round((balanceOwed / chargedThisMonth) * 100), 100) : 0;
+
+        return (
+          <View key={account.id}>
+            {idx > 0 && <View style={s.divider} />}
+            <View style={s.row}>
+              <View style={s.iconWrap}>
+                <Text style={s.iconText}>💳</Text>
+              </View>
+              <View style={s.info}>
+                <Text style={s.cardName} numberOfLines={1}>{account.name}</Text>
+                {last4 ? <Text style={s.cardSub}>{last4}</Text> : null}
+                <View style={s.statsRow}>
+                  <View style={s.statItem}>
+                    <Text style={s.statLabel}>Charged</Text>
+                    <Text style={s.statValue}>{chargedThisMonth > 0 ? dollars(chargedThisMonth) : '—'}</Text>
+                  </View>
+                  <View style={s.statItem}>
+                    <Text style={s.statLabel}>Paid</Text>
+                    <Text style={[s.statValue, { color: '#0891B2' }]}>{paidThisMonth > 0 ? dollars(paidThisMonth) : '—'}</Text>
+                  </View>
+                </View>
+                {!isPaidOff && chargedThisMonth > 0 && (
+                  <View style={[s.barWrap, { marginTop: spacing[1] }]}>
+                    <View style={s.barTrack}>
+                      <View style={[s.barFill, { width: `${utilPct}%` as unknown as number }]} />
+                    </View>
+                  </View>
+                )}
+              </View>
+              <View style={s.right}>
+                {isPaidOff
+                  ? <Text style={s.paidOff}>✓ $0</Text>
+                  : <Text style={s.balance}>{dollars(balanceOwed)}</Text>
+                }
+                <Text style={{ fontSize: typography.xs, color: isPaidOff ? '#059669' : colors.textMuted }}>
+                  {isPaidOff ? 'paid off' : 'owed'}
+                </Text>
+              </View>
+            </View>
+          </View>
+        );
+      })}
+    </Card>
+  );
+}
+
 // ─── Screen styles ────────────────────────────────────────────────────────────
 
 const createStyles = (c: Colors) => StyleSheet.create({
@@ -687,6 +790,7 @@ export default function BudgetScreen() {
   const {
     isConnected: bankIsConnected,
     transactions: bankTx,
+    accounts:     bankAccounts,
     categoryOverrides,
   } = useBank();
   const isDesktop = useIsDesktop();
@@ -752,6 +856,7 @@ export default function BudgetScreen() {
     if (!bankIsConnected || bankTx.length === 0) return {};
     const map: Record<string, number> = {};
     for (const tx of bankTx) {
+      if (isCreditCardPayment(tx)) continue; // settlement, not real spending
       const override = categoryOverrides[tx.id];
       if (!override?.startsWith('debt:')) continue;
       if (!isThisMonthLocal(tx.date)) continue;
@@ -794,6 +899,26 @@ export default function BudgetScreen() {
     }
     return paid;
   }, [thisMonth, debtNamesSet, bankDebtPayments, budget.debts]);
+
+  /** Credit card accounts with their current balance and this-month activity. */
+  const creditCardAccounts = useMemo(() => {
+    if (!bankIsConnected) return [];
+    return bankAccounts
+      .filter((a) => a.type === 'credit')
+      .map((account) => {
+        const acctTx = bankTx.filter((tx) => tx.account_id === account.id);
+        let chargedThisMonth = 0;
+        let paidThisMonth    = 0;
+        for (const tx of acctTx) {
+          if (!isThisMonthLocal(tx.date)) continue;
+          const raw = parseFloat(tx.amount);
+          if (raw > 0) chargedThisMonth += raw;
+          else         paidThisMonth    += Math.abs(raw);
+        }
+        const balanceOwed = parseFloat(account.balance?.ledger ?? '0') || 0;
+        return { account, balanceOwed, chargedThisMonth, paidThisMonth };
+      });
+  }, [bankIsConnected, bankAccounts, bankTx]);
 
   const handleDebtPaid = useCallback(async (debt: DebtItem, amount: number) => {
     await addTransaction({ categoryName: debt.name, amount, date: todayISO(), note: 'Debt payment' });
@@ -943,6 +1068,9 @@ export default function BudgetScreen() {
               {/* Left column */}
               <View style={styles.leftCol}>
                 <DebtPaymentCard debts={budget.debts} paidThisMonth={paidDebtNames} onPaid={handleDebtPaid} bankPaidAmounts={bankDebtPayments} />
+                {creditCardAccounts.length > 0 && (
+                  <CreditCardDebtCard entries={creditCardAccounts} />
+                )}
               </View>
 
               {/* Right column */}
@@ -955,6 +1083,9 @@ export default function BudgetScreen() {
             <>
               {categoryBreakdown}
               <DebtPaymentCard debts={budget.debts} paidThisMonth={paidDebtNames} onPaid={handleDebtPaid} bankPaidAmounts={bankDebtPayments} />
+              {creditCardAccounts.length > 0 && (
+                <CreditCardDebtCard entries={creditCardAccounts} />
+              )}
               {reportsLink}
             </>
           )}

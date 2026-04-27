@@ -9,13 +9,19 @@
 export interface TellerAccount {
   id: string;
   name: string;
-  type: string;
-  subtype: string;
+  type: string;       // 'depository' | 'credit'
+  subtype: string;    // 'checking' | 'savings' | 'credit_card' | etc.
   status: string;
   currency: string;
+  last_four: string;
   institution: { id: string; name: string };
   enrollment_id: string;
   links: { self: string; balances: string; transactions: string };
+  /** Current balances. For credit accounts `ledger` is the amount currently owed. */
+  balance?: {
+    available: string | null;
+    ledger:    string | null;
+  };
 }
 
 export interface TellerTransaction {

@@ -34,8 +34,8 @@ import { useIsDesktop } from '../hooks/useIsDesktop';
 import { CategoryItem } from '../types/budget';
 import { dollars, formatDate, isThisMonth } from '../utils/formatters';
 import { TellerTransaction } from '../types/teller';
-import { txSpendAmount, isTxSpending, isTxIncome, isTxTransfer } from '../utils/teller';
-import { resolveTxCategory, resolveDisplayCategory, DISPLAY_CATEGORIES, OTHER_META } from '../utils/categoryMapper';
+import { txSpendAmount, isTxSpending, isTxIncome, isTxTransfer, isCreditCardPayment } from '../utils/teller';
+import { resolveTxCategory, resolveDisplayCategory, DISPLAY_CATEGORIES, OTHER_META, isGoodOutflow } from '../utils/categoryMapper';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -87,29 +87,43 @@ function StatCard({ label, value, valueColor, sub, badgeText, badgeColor, badgeB
 }
 
 // ─── MonthlyBarChart ──────────────────────────────────────────────────────────
+// 3 bars per month: Income (green) · Productive (emerald) · Lifestyle (red)
+
+const GOOD_COLOR = '#059669'; // emerald-600 — investments, debt payoff, savings
+const BAD_COLOR  = '#EF4444'; // red-500    — lifestyle / discretionary
 
 function MonthlyBarChart({ months, colors }: {
-  months: Array<{ label: string; spent: number; income: number; isCurrent: boolean }>;
+  months: Array<{ label: string; goodSpent: number; badSpent: number; income: number; isCurrent: boolean }>;
   colors: Colors;
 }) {
-  const maxVal = Math.max(...months.flatMap((m) => [m.spent, m.income]), 1);
+  const maxVal = Math.max(
+    ...months.flatMap((m) => [m.goodSpent + m.badSpent, m.income]),
+    1,
+  );
 
   return (
     <View>
-      {/* Grouped bars */}
+      {/* Grouped bars — 3 per month */}
       <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: spacing[3], height: 90 }}>
         {months.map((month) => {
-          const spentH  = Math.max(Math.round((month.spent  / maxVal) * 72), month.spent  > 0 ? 3 : 0);
-          const incomeH = Math.max(Math.round((month.income / maxVal) * 72), month.income > 0 ? 3 : 0);
+          const totalSpent = month.goodSpent + month.badSpent;
+          const incomeH = Math.max(Math.round((month.income    / maxVal) * 72), month.income    > 0 ? 3 : 0);
+          const goodH   = Math.max(Math.round((month.goodSpent / maxVal) * 72), month.goodSpent > 0 ? 3 : 0);
+          const badH    = Math.max(Math.round((totalSpent      / maxVal) * 72), totalSpent      > 0 ? 3 : 0);
           return (
             <View key={month.label} style={{ flex: 1, alignItems: 'center', gap: spacing[1] }}>
-              {/* Two bars side by side */}
-              <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 3, height: 72, width: '100%' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 2, height: 72, width: '100%' }}>
+                {/* Income */}
                 <View style={{ flex: 1, justifyContent: 'flex-end' }}>
                   <View style={{ height: incomeH, backgroundColor: colors.accent, borderRadius: 3 }} />
                 </View>
+                {/* Productive (good) outflow */}
                 <View style={{ flex: 1, justifyContent: 'flex-end' }}>
-                  <View style={{ height: spentH, backgroundColor: month.isCurrent ? colors.primary : colors.primaryLight, borderRadius: 3 }} />
+                  <View style={{ height: goodH, backgroundColor: GOOD_COLOR, borderRadius: 3, opacity: month.isCurrent ? 1 : 0.55 }} />
+                </View>
+                {/* Lifestyle (bad) outflow */}
+                <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+                  <View style={{ height: badH, backgroundColor: BAD_COLOR, borderRadius: 3, opacity: month.isCurrent ? 1 : 0.45 }} />
                 </View>
               </View>
               <Text style={{ fontSize: typography.xs, color: month.isCurrent ? colors.primary : colors.textMuted, fontWeight: month.isCurrent ? typography.bold : typography.regular }}>
@@ -121,37 +135,46 @@ function MonthlyBarChart({ months, colors }: {
       </View>
 
       {/* Legend */}
-      <View style={{ flexDirection: 'row', gap: spacing[4], marginTop: spacing[3], marginBottom: spacing[3] }}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing[3], marginTop: spacing[3], marginBottom: spacing[3] }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
           <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: colors.accent }} />
           <Text style={{ fontSize: typography.xs, color: colors.textMuted }}>Income</Text>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-          <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: colors.primary }} />
-          <Text style={{ fontSize: typography.xs, color: colors.textMuted }}>Spending</Text>
+          <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: GOOD_COLOR }} />
+          <Text style={{ fontSize: typography.xs, color: colors.textMuted }}>Productive</Text>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+          <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: BAD_COLOR }} />
+          <Text style={{ fontSize: typography.xs, color: colors.textMuted }}>Lifestyle</Text>
         </View>
       </View>
 
       {/* Per-month summary cards */}
       <View style={{ flexDirection: 'row', gap: spacing[2] }}>
         {months.map((month) => {
-          const hasData = month.income > 0 || month.spent > 0;
-          const net     = month.income - month.spent;
+          const totalSpent = month.goodSpent + month.badSpent;
+          const hasData    = month.income > 0 || totalSpent > 0;
+          const net        = month.income - totalSpent;
           return (
             <View key={month.label} style={{ flex: 1, backgroundColor: colors.surfaceAlt, borderRadius: radius.md, padding: spacing[3], gap: 3 }}>
               <Text style={{ fontSize: typography.xs, color: month.isCurrent ? colors.primary : colors.textMuted, fontWeight: typography.semibold, marginBottom: 2 }}>
                 {month.label}
               </Text>
-              {month.income > 0 ? (
-                <Text style={{ fontSize: typography.xs, color: colors.accent }}>↑ {dollars(month.income)}</Text>
-              ) : (
-                <Text style={{ fontSize: typography.xs, color: colors.textMuted }}>↑ —</Text>
+              {/* Income */}
+              {month.income > 0
+                ? <Text style={{ fontSize: typography.xs, color: colors.accent }}>↑ {dollars(month.income)}</Text>
+                : <Text style={{ fontSize: typography.xs, color: colors.textMuted }}>↑ —</Text>
+              }
+              {/* Productive */}
+              {month.goodSpent > 0 && (
+                <Text style={{ fontSize: typography.xs, color: GOOD_COLOR }}>✅ {dollars(month.goodSpent)}</Text>
               )}
-              {month.spent > 0 ? (
-                <Text style={{ fontSize: typography.xs, color: colors.danger }}>↓ {dollars(month.spent)}</Text>
-              ) : (
-                <Text style={{ fontSize: typography.xs, color: colors.textMuted }}>↓ —</Text>
-              )}
+              {/* Lifestyle */}
+              {month.badSpent > 0
+                ? <Text style={{ fontSize: typography.xs, color: BAD_COLOR }}>↓ {dollars(month.badSpent)}</Text>
+                : <Text style={{ fontSize: typography.xs, color: colors.textMuted }}>↓ —</Text>
+              }
               {hasData && (
                 <View style={{ marginTop: 3, paddingTop: 4, borderTopWidth: 1, borderTopColor: colors.border }}>
                   <Text style={{ fontSize: typography.xs, fontWeight: typography.bold, color: net >= 0 ? colors.accent : colors.danger }}>
@@ -164,6 +187,162 @@ function MonthlyBarChart({ months, colors }: {
         })}
       </View>
     </View>
+  );
+}
+
+// ─── SpendingBreakdownPanel ───────────────────────────────────────────────────
+// Shown inside the Monthly Spending card to validate the total outflow figure.
+// Renders a rainbow proportion bar + per-category rows + a total footer.
+
+const bd = StyleSheet.create({
+  separator:     { height: 1, marginTop: spacing[4], marginBottom: spacing[4] },
+  heading:       { fontSize: typography.xs, fontWeight: typography.semibold, textTransform: 'uppercase' as const, letterSpacing: 0.6, marginBottom: spacing[3] },
+  // Good vs Lifestyle split cards
+  splitRow:      { flexDirection: 'row' as const, gap: spacing[2], marginBottom: spacing[3] },
+  splitCard:     { flex: 1, borderRadius: radius.md, padding: spacing[3], gap: 3, borderWidth: 1 },
+  splitLabel:    { fontSize: typography.xs, fontWeight: typography.semibold },
+  splitAmt:      { fontSize: typography.lg, fontWeight: typography.bold },
+  splitPct:      { fontSize: typography.xs },
+  splitSubRow:   { flexDirection: 'row' as const, flexWrap: 'wrap' as const, gap: spacing[1], marginTop: 2 },
+  splitSubItem:  { fontSize: typography.xs },
+  // Section header in list
+  listSection:   { fontSize: typography.xs, fontWeight: typography.semibold, textTransform: 'uppercase' as const, letterSpacing: 0.5, marginTop: spacing[3], marginBottom: spacing[1] },
+  // Proportion bar
+  propBar:       { flexDirection: 'row' as const, height: 10, borderRadius: radius.full, overflow: 'hidden' as const, marginBottom: spacing[3] },
+  row:           { flexDirection: 'row' as const, alignItems: 'center' as const, paddingVertical: spacing[1] + 2, gap: spacing[2] },
+  dot:           { width: 10, height: 10, borderRadius: 3, flexShrink: 0 },
+  rowName:       { flex: 1, fontSize: typography.sm },
+  rowPct:        { fontSize: typography.xs, width: 34, textAlign: 'right' as const },
+  rowAmt:        { fontSize: typography.sm, fontWeight: typography.semibold, width: 76, textAlign: 'right' as const },
+  totalRow:      { flexDirection: 'row' as const, alignItems: 'center' as const, paddingTop: spacing[3], marginTop: spacing[2], borderTopWidth: 1 },
+  totalLabel:    { flex: 1, fontSize: typography.sm, fontWeight: typography.bold },
+  totalAmt:      { fontSize: typography.sm, fontWeight: typography.bold },
+  noteRow:       { flexDirection: 'row' as const, alignItems: 'center' as const, marginTop: spacing[2], gap: spacing[1] },
+  noteText:      { fontSize: typography.xs },
+});
+
+function SpendingBreakdownPanel({
+  categories, monthLabel, colors,
+}: {
+  categories: Array<{ key: string; name: string; icon: string; color: string; amount: number }>;
+  monthLabel: string;
+  colors: Colors;
+}) {
+  const total = categories.reduce((s, c) => s + c.amount, 0);
+  if (total <= 0 || categories.length === 0) return null;
+
+  // Split categories into productive vs lifestyle
+  const goodCats = categories.filter((c) => isGoodOutflow(c.key));
+  const badCats  = categories.filter((c) => !isGoodOutflow(c.key));
+  const goodTotal = goodCats.reduce((s, c) => s + c.amount, 0);
+  const badTotal  = badCats.reduce((s, c) => s + c.amount, 0);
+  const goodPct   = total > 0 ? Math.round((goodTotal / total) * 100) : 0;
+  const badPct    = 100 - goodPct;
+
+  // Proportion bar — up to 9 category-coloured segments, rest as "Other"
+  const BAR_MAX    = 9;
+  const barSlice   = categories.slice(0, BAR_MAX);
+  const otherTotal = categories.slice(BAR_MAX).reduce((s, c) => s + c.amount, 0);
+
+  return (
+    <>
+      <View style={[bd.separator, { backgroundColor: colors.border }]} />
+      <Text style={[bd.heading, { color: colors.textMuted }]}>{monthLabel} — where it went</Text>
+
+      {/* ── Good vs Lifestyle split cards ── */}
+      <View style={bd.splitRow}>
+        {/* Productive */}
+        <View style={[bd.splitCard, { backgroundColor: '#ECFDF5', borderColor: '#059669' + '40' }]}>
+          <Text style={[bd.splitLabel, { color: '#059669' }]}>✅ Productive</Text>
+          <Text style={[bd.splitAmt, { color: '#059669' }]}>{dollars(goodTotal)}</Text>
+          <Text style={[bd.splitPct, { color: '#059669' + 'AA' }]}>{goodPct}% of outflow</Text>
+          {goodCats.length > 0 && (
+            <View style={bd.splitSubRow}>
+              {goodCats.slice(0, 3).map((c) => (
+                <Text key={c.key} style={[bd.splitSubItem, { color: '#059669' + 'CC' }]}>
+                  {c.icon} {c.name.split(' ')[0]}
+                </Text>
+              ))}
+            </View>
+          )}
+        </View>
+        {/* Lifestyle */}
+        <View style={[bd.splitCard, { backgroundColor: '#FEF2F2', borderColor: '#EF4444' + '40' }]}>
+          <Text style={[bd.splitLabel, { color: '#EF4444' }]}>💸 Lifestyle</Text>
+          <Text style={[bd.splitAmt, { color: '#EF4444' }]}>{dollars(badTotal)}</Text>
+          <Text style={[bd.splitPct, { color: '#EF4444' + 'AA' }]}>{badPct}% of outflow</Text>
+          {badCats.length > 0 && (
+            <View style={bd.splitSubRow}>
+              {badCats.slice(0, 3).map((c) => (
+                <Text key={c.key} style={[bd.splitSubItem, { color: '#EF4444' + 'CC' }]}>
+                  {c.icon} {c.name.split(' ')[0]}
+                </Text>
+              ))}
+            </View>
+          )}
+        </View>
+      </View>
+
+      {/* ── Rainbow proportion bar ── */}
+      <View style={bd.propBar}>
+        {barSlice.map((cat) => (
+          <View key={cat.key} style={{ flex: cat.amount, backgroundColor: cat.color }} />
+        ))}
+        {otherTotal > 0 && (
+          <View style={{ flex: otherTotal, backgroundColor: '#94A3B8' }} />
+        )}
+      </View>
+
+      {/* ── Per-category rows, grouped ── */}
+      {goodCats.length > 0 && (
+        <Text style={[bd.listSection, { color: '#059669' }]}>✅ Productive</Text>
+      )}
+      {goodCats.map((cat) => {
+        const pct = Math.round((cat.amount / total) * 100);
+        return (
+          <View key={cat.key} style={bd.row}>
+            <View style={[bd.dot, { backgroundColor: cat.color }]} />
+            <Text style={[bd.rowName, { color: colors.textPrimary }]} numberOfLines={1}>
+              {cat.icon}  {cat.name}
+            </Text>
+            <Text style={[bd.rowPct, { color: colors.textMuted }]}>{pct}%</Text>
+            <Text style={[bd.rowAmt, { color: '#059669' }]}>{dollars(cat.amount)}</Text>
+          </View>
+        );
+      })}
+
+      {badCats.length > 0 && (
+        <Text style={[bd.listSection, { color: '#EF4444', marginTop: goodCats.length > 0 ? spacing[3] : spacing[1] }]}>
+          💸 Lifestyle
+        </Text>
+      )}
+      {badCats.map((cat) => {
+        const pct = Math.round((cat.amount / total) * 100);
+        return (
+          <View key={cat.key} style={bd.row}>
+            <View style={[bd.dot, { backgroundColor: cat.color }]} />
+            <Text style={[bd.rowName, { color: colors.textPrimary }]} numberOfLines={1}>
+              {cat.icon}  {cat.name}
+            </Text>
+            <Text style={[bd.rowPct, { color: colors.textMuted }]}>{pct}%</Text>
+            <Text style={[bd.rowAmt, { color: colors.textSecondary }]}>{dollars(cat.amount)}</Text>
+          </View>
+        );
+      })}
+
+      {/* Total */}
+      <View style={[bd.totalRow, { borderTopColor: colors.border }]}>
+        <Text style={[bd.totalLabel, { color: colors.textPrimary }]}>Total outflow</Text>
+        <Text style={[bd.totalAmt, { color: colors.danger }]}>{dollars(total)}</Text>
+      </View>
+
+      {/* Footer note */}
+      <View style={bd.noteRow}>
+        <Text style={[bd.noteText, { color: colors.textMuted }]}>
+          ℹ️  Excludes internal bank transfers and credit card payments (tracked separately above).
+        </Text>
+      </View>
+    </>
   );
 }
 
@@ -342,6 +521,13 @@ const createStyles = (c: Colors) => StyleSheet.create({
   drillRemapText:  { fontSize: typography.xs, fontWeight: typography.semibold },
   drillSep:        { height: 1, marginLeft: spacing[3] },
   drillEmpty:      { paddingVertical: spacing[3], paddingHorizontal: spacing[3], fontSize: typography.xs },
+
+  // Transactions card
+  txFilterRow:     { flexDirection: 'row' as const, flexWrap: 'wrap' as const, gap: spacing[2], marginBottom: spacing[3] },
+  txFilterPill:    { paddingHorizontal: spacing[3], paddingVertical: spacing[1] + 2, borderRadius: radius.full },
+  txFilterText:    { fontSize: typography.xs, fontWeight: typography.semibold },
+  txShowAllBtn:    { marginTop: spacing[2], paddingVertical: spacing[2] + 2, alignItems: 'center' as const, borderTopWidth: 1 },
+  txShowAllText:   { fontSize: typography.sm, fontWeight: typography.semibold },
 });
 
 // ─── DashboardScreen ──────────────────────────────────────────────────────────
@@ -351,6 +537,7 @@ export default function DashboardScreen() {
   const {
     isConnected: bankIsConnected,
     transactions: bankTx,
+    accounts: bankAccounts,
     institutionName,
     categoryOverrides,
     setCategoryOverride,
@@ -374,6 +561,10 @@ export default function DashboardScreen() {
   // Inline category expansion + reclassify state
   const [expandedCategoryKey, setExpandedCategoryKey] = useState<string | null>(null);
   const [remapTx, setRemapTx] = useState<TellerTransaction | null>(null);
+
+  // Transactions card state
+  const [txFilter, setTxFilter]   = useState<'all' | 'outflow' | 'inflow' | 'debt'>('all');
+  const [txExpanded, setTxExpanded] = useState(false);
 
   // Build the list of available months from bank transactions (up to 6, newest first)
   const availableMonths = useMemo<Array<{ key: string; label: string }>>(() => {
@@ -454,6 +645,7 @@ export default function DashboardScreen() {
         if (`${y}-${m}` !== activeMonthKey) continue;
       }
       if (isTxTransfer(tx)) continue;
+      if (isCreditCardPayment(tx)) continue;
       const overriddenMeta = resolveDisplayCategory(tx, categoryOverrides, debtNames);
       if (overriddenMeta.key === 'transfer') continue;
       const spend = txSpendAmount(tx);
@@ -464,8 +656,9 @@ export default function DashboardScreen() {
     }
     return Object.entries(map)
       .map(([, { total, meta }]) => ({ ...meta, amount: total }))
-      .sort((a, b) => b.amount - a.amount)
-      .slice(0, 12);
+      .sort((a, b) => b.amount - a.amount);
+    // NOTE: no slice — keeping all categories so the breakdown panel total
+    // matches the bar chart exactly. The category display caps rendering to 12.
   }, [bankIsConnected, bankTx, categoryOverrides, activeMonthKey, debtNames]);
 
   // Transactions for the inline drill-down (all txs in selected month for the expanded category)
@@ -478,6 +671,7 @@ export default function DashboardScreen() {
           if (`${y}-${m}` !== activeMonthKey) return false;
         }
         if (isTxTransfer(tx)) return false;
+        if (isCreditCardPayment(tx)) return false;
         const meta = resolveDisplayCategory(tx, categoryOverrides, debtNames);
         if (meta.key === 'transfer') return false;
         if (txSpendAmount(tx) === 0) return false;
@@ -486,18 +680,61 @@ export default function DashboardScreen() {
       .sort((a, b) => b.date.localeCompare(a.date));
   }, [expandedCategoryKey, bankIsConnected, bankTx, activeMonthKey, categoryOverrides, debtNames]);
 
-  // Last 5 bank transactions (spending + income, excluding internal transfers, sorted newest-first)
-  const recentBankTx = useMemo(() => {
+  // All displayable bank transactions for the active month — base for the Transactions card
+  const allBankTxForDisplay = useMemo(() => {
     if (!bankIsConnected) return [];
     return [...bankTx]
       .filter((tx) => {
+        if (activeMonthKey) {
+          const [y, m] = tx.date.split('-');
+          if (`${y}-${m}` !== activeMonthKey) return false;
+        }
         if (isTxTransfer(tx)) return false;
+        if (isCreditCardPayment(tx)) return false;
         const meta = resolveDisplayCategory(tx, categoryOverrides, debtNames);
         return meta.key !== 'transfer';
       })
-      .sort((a, b) => b.date.localeCompare(a.date))
-      .slice(0, 5);
-  }, [bankIsConnected, bankTx, categoryOverrides]);
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }, [bankIsConnected, bankTx, categoryOverrides, debtNames, activeMonthKey]);
+
+  // Active-tab filtered view of the transactions card
+  const filteredBankTx = useMemo(() => {
+    return allBankTxForDisplay.filter((tx) => {
+      switch (txFilter) {
+        case 'outflow': return txSpendAmount(tx) > 0;
+        case 'inflow':  return isTxIncome(tx);
+        case 'debt':    return !!categoryOverrides[tx.id]?.startsWith('debt:');
+        default:        return true;
+      }
+    });
+  }, [allBankTxForDisplay, txFilter, categoryOverrides]);
+
+  // ── Credit card accounts — per-card balance + this-month activity ─────────
+
+  const creditCardData = useMemo(() => {
+    const creditAccounts = bankAccounts.filter((a) => a.type === 'credit');
+    if (creditAccounts.length === 0) return [];
+
+    return creditAccounts.map((account) => {
+      const acctTx = bankTx.filter((tx) => tx.account_id === account.id);
+
+      // Current balance owed (from Teller's live balance)
+      const balanceOwed = parseFloat(account.balance?.ledger ?? '0') || 0;
+
+      // This-month charges and payments
+      let chargedThisMonth = 0;
+      let paidThisMonth    = 0;
+      for (const tx of acctTx) {
+        const [ty, tm] = tx.date.split('-');
+        if (parseInt(ty) !== NOW.getFullYear() || parseInt(tm) - 1 !== NOW.getMonth()) continue;
+        const raw = parseFloat(tx.amount);
+        if (raw > 0) chargedThisMonth += raw;   // charge (positive on credit)
+        else         paidThisMonth    += Math.abs(raw); // payment (negative on credit)
+      }
+
+      return { account, balanceOwed, chargedThisMonth, paidThisMonth };
+    });
+  }, [bankAccounts, bankTx]);
 
   // ── Monthly trend: spent + income for last 3 months ──────────────────────
 
@@ -508,38 +745,49 @@ export default function DashboardScreen() {
       const month = d.getMonth();
       const label = d.toLocaleString(undefined, { month: 'short' });
 
-      let spent  = 0;
-      let income = 0;
+      let goodSpent = 0;   // productive: debt payments, investments, savings
+      let badSpent  = 0;   // lifestyle: everything else
+      let income    = 0;
+
+      // Build a zero-padded "YYYY-MM" key for this slot so we can compare
+      // against tx.date strings directly — avoids new Date() UTC-midnight
+      // mismatches that shift dates by one day in negative-UTC timezones.
+      const slotKey = `${year}-${String(month + 1).padStart(2, '0')}`;
 
       if (bankIsConnected && bankTx.length > 0) {
         for (const tx of bankTx) {
-          const txd = new Date(tx.date);
-          if (txd.getFullYear() !== year || txd.getMonth() !== month) continue;
-          // Skip internal transfers — they don't affect real money in/out
+          const [ty, tm] = tx.date.split('-');
+          if (`${ty}-${tm}` !== slotKey) continue;
+          // Skip internal transfers and CC payment settlements (individual charges already counted)
           if (isTxTransfer(tx)) continue;
+          if (isCreditCardPayment(tx)) continue;
           const overrideMeta = resolveDisplayCategory(tx, categoryOverrides, debtNames);
           if (overrideMeta.key === 'transfer') continue;
           const spend = txSpendAmount(tx);
           if (spend > 0) {
-            spent += spend;
+            if (isGoodOutflow(overrideMeta.key)) {
+              goodSpent += spend;
+            } else {
+              badSpent += spend;
+            }
           } else if (isTxIncome(tx)) {
             income += Math.abs(parseFloat(tx.amount));
           }
         }
       } else {
-        // No bank: use manually logged transactions for spending, income sources for income
+        // No bank: all manual transactions counted as lifestyle (no investment data)
         for (const tx of budget.transactions) {
-          const txd = new Date(tx.date);
-          if (txd.getFullYear() === year && txd.getMonth() === month) spent += tx.amount;
+          const [ty, tm] = (tx.date as string).split('-');
+          if (`${ty}-${tm}` === slotKey) badSpent += tx.amount;
         }
         income = totalIncome; // monthly income from setup (same each month)
       }
 
-      return { label, spent, income, isCurrent: i === 2 };
+      return { label, goodSpent, badSpent, income, isCurrent: i === 2 };
     });
   }, [bankIsConnected, bankTx, categoryOverrides, budget.transactions, totalIncome]);
 
-  const hasTrendData = monthlyTrend.some((m) => m.spent > 0 || m.income > 0);
+  const hasTrendData = monthlyTrend.some((m) => m.goodSpent + m.badSpent > 0 || m.income > 0);
 
   // ── AI Insights (locally computed) ────────────────────────────────────────
 
@@ -572,8 +820,8 @@ export default function DashboardScreen() {
 
     // Month-over-month trend
     if (hasTrendData && monthlyTrend.length >= 2) {
-      const prev = monthlyTrend[monthlyTrend.length - 2].spent;
-      const curr = monthlyTrend[monthlyTrend.length - 1].spent;
+      const prev = monthlyTrend[monthlyTrend.length - 2].goodSpent + monthlyTrend[monthlyTrend.length - 2].badSpent;
+      const curr = monthlyTrend[monthlyTrend.length - 1].goodSpent + monthlyTrend[monthlyTrend.length - 1].badSpent;
       if (prev > 0 && curr > 0) {
         const changePct = Math.round(((curr - prev) / prev) * 100);
         if (changePct > 20) {
@@ -693,10 +941,11 @@ export default function DashboardScreen() {
   const maxDisplaySpend = displayCategories[0]?.amount ?? 0;
   const topCategory     = displayCategories[0];
 
-  // Which recent transactions to display
-  const displayRecentTx = bankIsConnected && recentBankTx.length > 0
-    ? recentBankTx
-    : [...thisMonthTx].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
+  // Manual-only transaction fallback (when no bank connected)
+  const manualTxSorted = useMemo(
+    () => [...thisMonthTx].sort((a, b) => b.date.localeCompare(a.date)),
+    [thisMonthTx],
+  );
 
   // ── Sections ───────────────────────────────────────────────────────────────
 
@@ -742,6 +991,11 @@ export default function DashboardScreen() {
         )}
       </View>
       <MonthlyBarChart months={monthlyTrend} colors={colors} />
+      <SpendingBreakdownPanel
+        categories={displayCategories}
+        monthLabel={bankIsConnected ? activeMonthLabel : MONTH_LABEL}
+        colors={colors}
+      />
     </Card>
   ) : null;
 
@@ -807,11 +1061,17 @@ export default function DashboardScreen() {
             {bankIsConnected ? `No transactions for ${activeMonthLabel}.` : 'No spending data yet this month.'}
           </Text>
         </View>
-      ) : (
-        displayCategories.map((item, idx) => {
+      ) : (() => {
+        const CAT_DISPLAY_LIMIT = 12;
+        const visibleCats  = displayCategories.slice(0, CAT_DISPLAY_LIMIT);
+        const hiddenCount  = displayCategories.length - visibleCats.length;
+        const hiddenTotal  = displayCategories.slice(CAT_DISPLAY_LIMIT).reduce((s, c) => s + c.amount, 0);
+        return (
+          <>
+            {visibleCats.map((item, idx) => {
           const catKey   = item.key ?? item.name;
           const isExpanded = bankIsConnected && expandedCategoryKey === catKey;
-          const isLast   = idx === displayCategories.length - 1;
+          const isLast   = idx === visibleCats.length - 1 && hiddenCount === 0;
           const drillTotal = isExpanded
             ? categoryDrillTx.reduce((s, tx) => s + txSpendAmount(tx), 0)
             : 0;
@@ -904,67 +1164,153 @@ export default function DashboardScreen() {
               {!isLast && <View style={styles.divider} />}
             </View>
           );
-        })
-      )}
+        })}
+            {hiddenCount > 0 && (
+              <View style={{ paddingTop: spacing[2], borderTopWidth: 1, borderTopColor: colors.border }}>
+                <Text style={{ fontSize: typography.xs, color: colors.textMuted, textAlign: 'center' }}>
+                  + {hiddenCount} more {hiddenCount === 1 ? 'category' : 'categories'}  ·  {dollars(hiddenTotal)} — see breakdown below
+                </Text>
+              </View>
+            )}
+          </>
+        );
+      })()}
     </Card>
   );
 
+  // ── Transactions card (filterable, expandable) ────────────────────────────
+  const TX_PREVIEW = 8;
+  const txToShow   = txExpanded ? filteredBankTx : filteredBankTx.slice(0, TX_PREVIEW);
+  const txHasMore  = filteredBankTx.length > TX_PREVIEW;
+
+  const TX_FILTER_DEFS: Array<{ key: typeof txFilter; label: string }> = [
+    { key: 'all',     label: 'All' },
+    { key: 'outflow', label: 'Outflow' },
+    { key: 'inflow',  label: 'Inflow' },
+    { key: 'debt',    label: 'Debt' },
+  ];
+
   const recentSection = (
     <Card style={styles.card}>
+      {/* Header */}
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Recent Expenses</Text>
-        {displayRecentTx.length > 0 && (
-          <Text style={styles.sectionSub}>
-            {bankIsConnected && recentBankTx.length > 0 ? 'From bank' : `Last ${displayRecentTx.length}`}
-          </Text>
+        <Text style={styles.sectionTitle}>Transactions</Text>
+        {bankIsConnected && allBankTxForDisplay.length > 0 && (
+          <Text style={styles.sectionSub}>{allBankTxForDisplay.length} this period</Text>
         )}
       </View>
-      {displayRecentTx.length === 0 ? (
-        <View style={styles.emptyWrap}>
-          <Text style={styles.emptyIcon}>🧾</Text>
-          <Text style={styles.emptyText}>
-            {bankIsConnected ? 'No bank transactions found.' : 'No expenses logged yet this month.'}
-          </Text>
+
+      {/* Filter tabs — bank only */}
+      {bankIsConnected && (
+        <View style={styles.txFilterRow}>
+          {TX_FILTER_DEFS.map((f) => {
+            const active = txFilter === f.key;
+            const count  = f.key === 'all'
+              ? allBankTxForDisplay.length
+              : allBankTxForDisplay.filter((tx) => {
+                  switch (f.key) {
+                    case 'outflow': return txSpendAmount(tx) > 0;
+                    case 'inflow':  return isTxIncome(tx);
+                    case 'debt':    return !!categoryOverrides[tx.id]?.startsWith('debt:');
+                    default:        return true;
+                  }
+                }).length;
+            return (
+              <TouchableOpacity
+                key={f.key}
+                style={[
+                  styles.txFilterPill,
+                  active
+                    ? { backgroundColor: colors.primary }
+                    : { backgroundColor: colors.surfaceAlt, borderColor: colors.border, borderWidth: 1 },
+                ]}
+                onPress={() => { setTxFilter(f.key); setTxExpanded(false); }}
+                activeOpacity={0.8}
+              >
+                <Text style={[
+                  styles.txFilterText,
+                  { color: active ? colors.textInverse : colors.textSecondary },
+                ]}>
+                  {f.label}{count > 0 ? `  ${count}` : ''}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
-      ) : bankIsConnected && recentBankTx.length > 0 ? (
-        // Bank transactions
-        recentBankTx.map((tx, idx) => {
-          const spend    = txSpendAmount(tx);
-          const isCredit = isTxIncome(tx);
-          const amount   = isCredit ? Math.abs(parseFloat(tx.amount)) : spend;
-          const info     = resolveDisplayCategory(tx, categoryOverrides, debtNames);
-          const name     = tx.details?.counterparty?.name ?? tx.description ?? '—';
-          return (
-            <View key={tx.id}>
-              <RecentTxRow
-                icon={info.icon}
-                color={info.color}
-                category={name}
-                sub={`${tx.date}  ·  ${tx.accountName}`}
-                amount={amount}
-                isCredit={isCredit}
-              />
-              {idx < recentBankTx.length - 1 && <View style={txStyles.divider} />}
-            </View>
-          );
-        })
+      )}
+
+      {/* Rows */}
+      {bankIsConnected ? (
+        txToShow.length === 0 ? (
+          <View style={styles.emptyWrap}>
+            <Text style={styles.emptyIcon}>🧾</Text>
+            <Text style={styles.emptyText}>
+              {txFilter !== 'all'
+                ? `No ${txFilter} transactions for ${activeMonthLabel}.`
+                : `No transactions for ${activeMonthLabel}.`}
+            </Text>
+          </View>
+        ) : (
+          <>
+            {txToShow.map((tx, idx) => {
+              const spend    = txSpendAmount(tx);
+              const isCredit = isTxIncome(tx);
+              const amount   = isCredit ? Math.abs(parseFloat(tx.amount)) : spend;
+              const info     = resolveDisplayCategory(tx, categoryOverrides, debtNames);
+              const name     = tx.details?.counterparty?.name ?? tx.description ?? '—';
+              return (
+                <View key={tx.id}>
+                  <RecentTxRow
+                    icon={info.icon}
+                    color={info.color}
+                    category={name}
+                    sub={`${tx.date}  ·  ${tx.accountName}`}
+                    amount={amount}
+                    isCredit={isCredit}
+                  />
+                  {idx < txToShow.length - 1 && <View style={txStyles.divider} />}
+                </View>
+              );
+            })}
+            {txHasMore && (
+              <TouchableOpacity
+                style={[styles.txShowAllBtn, { borderTopColor: colors.border }]}
+                onPress={() => setTxExpanded(!txExpanded)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.txShowAllText, { color: colors.primary }]}>
+                  {txExpanded
+                    ? '↑ Show less'
+                    : `↓ Show all ${filteredBankTx.length} transactions`}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </>
+        )
       ) : (
-        // Budget (manually imported) transactions
-        (displayRecentTx as typeof thisMonthTx).map((tx, idx) => {
-          const cat = allCategories.find((c) => c.name === (tx as any).categoryName) ?? { icon: '📦', color: '#94A3B8' };
-          return (
-            <View key={(tx as any).id}>
-              <RecentTxRow
-                icon={cat.icon}
-                color={cat.color}
-                category={(tx as any).categoryName}
-                sub={formatDate((tx as any).date)}
-                amount={(tx as any).amount}
-              />
-              {idx < displayRecentTx.length - 1 && <View style={txStyles.divider} />}
-            </View>
-          );
-        })
+        // No bank — manual transactions
+        manualTxSorted.length === 0 ? (
+          <View style={styles.emptyWrap}>
+            <Text style={styles.emptyIcon}>🧾</Text>
+            <Text style={styles.emptyText}>No expenses logged yet this month.</Text>
+          </View>
+        ) : (
+          manualTxSorted.map((tx, idx) => {
+            const cat = allCategories.find((c) => c.name === (tx as any).categoryName) ?? { icon: '📦', color: '#94A3B8' };
+            return (
+              <View key={(tx as any).id}>
+                <RecentTxRow
+                  icon={cat.icon}
+                  color={cat.color}
+                  category={(tx as any).categoryName}
+                  sub={formatDate((tx as any).date)}
+                  amount={(tx as any).amount}
+                />
+                {idx < manualTxSorted.length - 1 && <View style={txStyles.divider} />}
+              </View>
+            );
+          })
+        )
       )}
     </Card>
   );
@@ -1000,10 +1346,15 @@ export default function DashboardScreen() {
             {/* Full-width: trend + insights */}
             {trendSection}
             {insightsSection}
-            {/* Two columns: categories + recent */}
+            {/* Two columns: categories left, credit cards + recent right */}
             <View style={styles.columns}>
               <View style={styles.leftCol}>{categoryBreakdownSection}</View>
-              <View style={styles.rightCol}>{recentSection}</View>
+              <View style={styles.rightCol}>
+                {creditCardData.length > 0 && (
+                  <CreditCardSection data={creditCardData} colors={colors} institutionName={institutionName} />
+                )}
+                {recentSection}
+              </View>
             </View>
           </>
         ) : (
@@ -1011,6 +1362,9 @@ export default function DashboardScreen() {
             {trendSection}
             {insightsSection}
             {categoryBreakdownSection}
+            {creditCardData.length > 0 && (
+              <CreditCardSection data={creditCardData} colors={colors} institutionName={institutionName} />
+            )}
             {recentSection}
           </>
         )}
@@ -1040,6 +1394,157 @@ export default function DashboardScreen() {
     </SafeAreaView>
   );
 }
+
+// ─── CreditCardSection ────────────────────────────────────────────────────────
+
+type CreditCardEntry = {
+  account:          import('../types/teller').TellerAccount;
+  balanceOwed:      number;
+  chargedThisMonth: number;
+  paidThisMonth:    number;
+};
+
+function CreditCardSection({
+  data, colors, institutionName,
+}: {
+  data:            CreditCardEntry[];
+  colors:          Colors;
+  institutionName: string | null;
+}) {
+  // Total owed across all cards — used for the header summary
+  const totalOwed = data.reduce((s, d) => s + d.balanceOwed, 0);
+
+  return (
+    <View style={[cc.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      {/* Header */}
+      <View style={cc.header}>
+        <Text style={[cc.title, { color: colors.textPrimary }]}>Credit Cards</Text>
+        <View style={[cc.badge, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
+          <View style={[cc.dot, { backgroundColor: '#0891B2' }]} />
+          <Text style={[cc.badgeText, { color: colors.textSecondary }]}>
+            {institutionName ?? 'Bank'}
+          </Text>
+        </View>
+      </View>
+
+      {/* Per-card rows */}
+      {data.map((entry, idx) => {
+        const { account, balanceOwed, chargedThisMonth, paidThisMonth } = entry;
+        const isPaidOff      = balanceOwed <= 0;
+        const isCarrying     = balanceOwed > 0;
+        const last4          = account.last_four ? `····${account.last_four}` : '';
+        const utilisation    = chargedThisMonth > 0
+          ? Math.min(Math.round((balanceOwed / chargedThisMonth) * 100), 100)
+          : 0;
+
+        return (
+          <View key={account.id}>
+            {idx > 0 && <View style={[cc.divider, { backgroundColor: colors.border }]} />}
+
+            {/* Card title row */}
+            <View style={cc.cardRow}>
+              <View style={[cc.cardIcon, { backgroundColor: '#0891B222' }]}>
+                <Text style={cc.cardIconText}>💳</Text>
+              </View>
+              <View style={cc.cardInfo}>
+                <Text style={[cc.cardName, { color: colors.textPrimary }]} numberOfLines={1}>
+                  {account.name}
+                </Text>
+                {last4 ? <Text style={[cc.cardLast4, { color: colors.textMuted }]}>{last4}</Text> : null}
+              </View>
+              {/* Balance badge */}
+              {isPaidOff ? (
+                <View style={[cc.statusBadge, { backgroundColor: '#D1FAE5', borderColor: '#10B98140' }]}>
+                  <Text style={[cc.statusText, { color: '#059669' }]}>✓ Paid off</Text>
+                </View>
+              ) : (
+                <View style={[cc.statusBadge, { backgroundColor: '#CFFAFE', borderColor: '#0891B240' }]}>
+                  <Text style={[cc.statusText, { color: '#0891B2' }]}>
+                    {dollars(balanceOwed)} owed
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            {/* This-month stats */}
+            <View style={cc.statsRow}>
+              <View style={cc.stat}>
+                <Text style={[cc.statLabel, { color: colors.textMuted }]}>Charged</Text>
+                <Text style={[cc.statValue, { color: colors.danger }]}>
+                  {chargedThisMonth > 0 ? dollars(chargedThisMonth) : '—'}
+                </Text>
+              </View>
+              <View style={[cc.statDivider, { backgroundColor: colors.border }]} />
+              <View style={cc.stat}>
+                <Text style={[cc.statLabel, { color: colors.textMuted }]}>Paid</Text>
+                <Text style={[cc.statValue, { color: '#0891B2' }]}>
+                  {paidThisMonth > 0 ? dollars(paidThisMonth) : '—'}
+                </Text>
+              </View>
+              <View style={[cc.statDivider, { backgroundColor: colors.border }]} />
+              <View style={cc.stat}>
+                <Text style={[cc.statLabel, { color: colors.textMuted }]}>Balance</Text>
+                <Text style={[cc.statValue, { color: isCarrying ? colors.textPrimary : '#059669' }]}>
+                  {isPaidOff ? '$0' : dollars(balanceOwed)}
+                </Text>
+              </View>
+            </View>
+
+            {/* Utilisation bar (only when carrying a balance) */}
+            {isCarrying && chargedThisMonth > 0 && (
+              <View style={cc.barWrap}>
+                <View style={[cc.barTrack, { backgroundColor: colors.surfaceAlt }]}>
+                  <View style={[cc.barFill, { width: `${utilisation}%` as any, backgroundColor: '#0891B2' }]} />
+                </View>
+                <Text style={[cc.barLabel, { color: colors.textMuted }]}>
+                  {utilisation}% of this month's charges still unpaid
+                </Text>
+              </View>
+            )}
+          </View>
+        );
+      })}
+
+      {/* Footer total if multiple cards and any have a balance */}
+      {data.length > 1 && totalOwed > 0 && (
+        <View style={[cc.footer, { borderTopColor: colors.border, backgroundColor: colors.surfaceAlt }]}>
+          <Text style={[cc.footerLabel, { color: colors.textSecondary }]}>Total carried balance</Text>
+          <Text style={[cc.footerValue, { color: '#0891B2' }]}>{dollars(totalOwed)}</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+const cc = StyleSheet.create({
+  card:        { borderRadius: radius.lg, borderWidth: 1, padding: spacing[4], marginBottom: spacing[4] },
+  header:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing[3] },
+  title:       { fontSize: typography.base, fontWeight: typography.bold },
+  badge:       { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: spacing[2], paddingVertical: 3, borderRadius: radius.full, borderWidth: 1 },
+  dot:         { width: 6, height: 6, borderRadius: 3 },
+  badgeText:   { fontSize: typography.xs, fontWeight: typography.semibold },
+  divider:     { height: 1, marginVertical: spacing[3] },
+  cardRow:     { flexDirection: 'row', alignItems: 'center', gap: spacing[2], marginBottom: spacing[2] },
+  cardIcon:    { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  cardIconText:{ fontSize: 16 },
+  cardInfo:    { flex: 1 },
+  cardName:    { fontSize: typography.sm, fontWeight: typography.semibold },
+  cardLast4:   { fontSize: typography.xs, marginTop: 1 },
+  statusBadge: { paddingHorizontal: spacing[2], paddingVertical: 3, borderRadius: radius.full, borderWidth: 1 },
+  statusText:  { fontSize: typography.xs, fontWeight: typography.bold },
+  statsRow:    { flexDirection: 'row', alignItems: 'center', marginBottom: spacing[2] },
+  stat:        { flex: 1, alignItems: 'center', gap: 2 },
+  statLabel:   { fontSize: typography.xs, fontWeight: typography.medium },
+  statValue:   { fontSize: typography.sm, fontWeight: typography.bold },
+  statDivider: { width: 1, height: 28, marginHorizontal: spacing[1] },
+  barWrap:     { gap: 4, marginTop: spacing[1] },
+  barTrack:    { height: 5, borderRadius: radius.full, overflow: 'hidden' as const },
+  barFill:     { height: '100%' as unknown as number, borderRadius: radius.full },
+  barLabel:    { fontSize: typography.xs },
+  footer:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: spacing[3], paddingTop: spacing[3], borderTopWidth: 1, paddingHorizontal: spacing[1], borderRadius: radius.sm, paddingVertical: spacing[2], marginHorizontal: -spacing[1] },
+  footerLabel: { fontSize: typography.xs, fontWeight: typography.medium },
+  footerValue: { fontSize: typography.sm, fontWeight: typography.bold },
+});
 
 // ─── DashRemapModal ───────────────────────────────────────────────────────────
 // Lightweight reclassify sheet used from the inline category drill-down.

@@ -105,6 +105,7 @@ const SLUG_MAP: Record<string, Omit<CategoryMeta, 'key'>> = {
   savings:                { name: 'Savings',           icon: '💰', color: '#15803D' },
   transfer:               { name: 'Transfer',          icon: '↔️', color: '#94A3B8' },
   investment:             { name: 'Investments',       icon: '📈', color: '#059669' },
+  investments:            { name: 'Investments',       icon: '📈', color: '#059669' },
 
   // Education
   education:              { name: 'Education',         icon: '🎓', color: '#B45309' },
@@ -274,6 +275,20 @@ const KEYWORD_MAP: Array<[string, string[]]> = [
     'american family', 'lemonade insurance', 'root insurance',
   ]],
 
+  // ── Investments / brokerage ───────────────────────────────────────────────────
+  // Transfers TO known brokerages = investing (good outflow, not lifestyle spend).
+  ['investment', [
+    'fidelity', 'vanguard', 'charles schwab', 'schwab brokerage', 'td ameritrade',
+    'etrade', 'e*trade', 'e trade', 'robinhood', 'wealthfront', 'betterment',
+    'acorns invest', 'stash invest', 'm1 finance', 'interactive brokers',
+    'merrill edge', 'merrill lynch', 'edward jones', 'raymond james',
+    'ameriprise', 'tiaa', 'principal financial', 't. rowe price', 'troweprice',
+    'franklin templeton', 'american funds', 'fidelity investments',
+    'webull', 'public.com', 'sofi invest', 'ally invest',
+    'coinbase', 'gemini exchange', 'kraken exchange', 'binance',
+    'computershare', 'sharebuilder', 'capital group',
+  ]],
+
   // ── Education ────────────────────────────────────────────────────────────────
   ['education', [
     'college', 'university', 'tuition', 'coursera', 'udemy', 'skillshare',
@@ -377,6 +392,8 @@ export const DISPLAY_CATEGORIES: CategoryMeta[] = [
   { key: 'travel',              name: 'Travel',             icon: '✈️', color: '#6366F1' },
   { key: 'accommodation',       name: 'Hotels',             icon: '🏨', color: '#7C3AED' },
   { key: 'insurance',           name: 'Insurance',          icon: '🛡️', color: '#64748B' },
+  { key: 'investment',          name: 'Investments',        icon: '📈', color: '#059669' },
+  { key: 'savings',             name: 'Savings',            icon: '💰', color: '#15803D' },
   { key: 'education',           name: 'Education',          icon: '🎓', color: '#B45309' },
   { key: 'charity',             name: 'Charity',            icon: '❤️', color: '#DC2626' },
   { key: 'income',              name: 'Income / Deposit',   icon: '💵', color: '#10B981' },
@@ -435,6 +452,25 @@ export function resolveTxCategory(tx: TellerTransaction): CategoryMeta {
   }
 
   return OTHER_META;
+}
+
+/**
+ * Returns true if this category key represents "productive" / good outflow:
+ *   • Debt payments (specific debt overrides OR the generic debt_payment slug)
+ *   • Investments / brokerage deposits
+ *   • Savings contributions
+ *
+ * Used to split spending into "Productive" vs "Lifestyle" on the dashboard.
+ */
+export function isGoodOutflow(catKey: string): boolean {
+  return (
+    catKey === 'investment'    ||
+    catKey === 'investments'   ||
+    catKey === 'savings'       ||
+    catKey === 'debt_payment'  ||
+    catKey === 'loan_payments' ||
+    catKey.startsWith('debt:')
+  );
 }
 
 /**
